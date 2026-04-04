@@ -2,7 +2,7 @@
 
 수험생의 공부 중 졸음과 실제 수면 패턴을 함께 분석해 수면 루틴을 제안하는 Android 앱 프로젝트입니다.
 
-현재 이 저장소는 기획 문서와 Stitch 산출물을 바탕으로, `Kotlin + Jetpack Compose` 기반 Android 앱 MVP 골격까지 구현된 상태입니다.
+현재 이 저장소는 기획 문서와 Stitch 산출물을 바탕으로, `Kotlin + Jetpack Compose` 기반 Android 앱 MVP와 기본 검증까지 완료된 상태입니다.
 
 ## 현재 상태
 
@@ -13,6 +13,8 @@
 - 규칙 기반 추천 엔진 추가
 - Raspberry Pi BLE / Smartwatch 연동은 `fake/stub` 구조로 연결
 - 단위 테스트 초안 추가
+- `testDebugUnitTest` 성공
+- 실기기 수동 테스트 확인
 
 ## 기술 스택
 
@@ -76,11 +78,26 @@ sdk.dir=/mnt/c/Users/cksgm/AppData/Local/Android/Sdk
 
 ### 단위 테스트
 
-이 Codex 샌드박스에서는 Kotlin daemon이 기본 홈 디렉터리에 쓰지 못하는 경우가 있어서, 아래처럼 `GRADLE_OPTS`를 함께 주는 편이 안전했습니다.
+```bash
+./gradlew clean testDebugUnitTest
+```
+
+현재 기준으로 `testDebugUnitTest`는 성공했습니다.
+
+Codex 샌드박스처럼 홈 디렉터리 쓰기 제약이 있는 환경에서는 Kotlin daemon이 fallback 컴파일로 동작할 수 있습니다. 그런 경우 아래처럼 `GRADLE_OPTS`를 함께 주는 편이 안전했습니다.
 
 ```bash
-GRADLE_OPTS='-Duser.home=/tmp' ./gradlew testDebugUnitTest
+GRADLE_OPTS='-Duser.home=/tmp' ./gradlew clean testDebugUnitTest
 ```
+
+### 수동 테스트
+
+실기기에서 기본 플로우 동작을 확인했습니다.
+
+- 앱 실행 및 온보딩 진입
+- 홈/분석/스케줄/설정 탭 이동
+- 상세 화면 진입 및 뒤로 가기
+- 로컬 저장 상태 유지
 
 ## 현재 확인된 이슈
 
@@ -91,11 +108,10 @@ GRADLE_OPTS='-Duser.home=/tmp' ./gradlew testDebugUnitTest
 
 ## 다음 세션에서 바로 이어서 할 일
 
-1. `testDebugUnitTest`를 로컬 환경에서 다시 끝까지 확인
-2. 테스트 실패가 남으면 `app/build/reports/tests/testDebugUnitTest` 리포트 확인
-3. 실제 BLE/Health Connect 구현으로 fake 데이터 소스 교체
-4. 문자열 리소스 정리
-5. 필요하면 AGP 버전 업그레이드 검토
+1. 실제 BLE/Health Connect 구현으로 fake 데이터 소스 교체
+2. 문자열 리소스 정리 및 다국어 확장 준비
+3. AGP 버전 업그레이드 검토
+4. 필요하면 UI 테스트 및 instrumentation 테스트 추가
 
 ## 참고 문서
 
