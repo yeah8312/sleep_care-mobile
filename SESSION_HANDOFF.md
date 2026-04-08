@@ -18,9 +18,8 @@
 - 실기기 수동 테스트 확인
 - README 정리
 
-## 핵심 파일
+## 핵심 코드 위치
 
-- [`README.md`](/mnt/c/Users/cksgm/.gemini/antigravity/scratch/sleep_care-mobile/README.md)
 - [`app/src/main/java/com/sleepcare/mobile/navigation/SleepCareApp.kt`](/mnt/c/Users/cksgm/.gemini/antigravity/scratch/sleep_care-mobile/app/src/main/java/com/sleepcare/mobile/navigation/SleepCareApp.kt)
 - [`app/src/main/java/com/sleepcare/mobile/data/repository/AppRepositories.kt`](/mnt/c/Users/cksgm/.gemini/antigravity/scratch/sleep_care-mobile/app/src/main/java/com/sleepcare/mobile/data/repository/AppRepositories.kt)
 - [`app/src/main/java/com/sleepcare/mobile/data/local/LocalStorage.kt`](/mnt/c/Users/cksgm/.gemini/antigravity/scratch/sleep_care-mobile/app/src/main/java/com/sleepcare/mobile/data/local/LocalStorage.kt)
