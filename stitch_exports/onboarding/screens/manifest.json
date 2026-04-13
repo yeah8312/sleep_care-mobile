@@ -36,17 +36,18 @@
     },
     {
       "order": 2,
-      "title": "Home Dashboard",
-      "id": "01609940d20845ffb130b9faec7296ce",
+      "title": "Home Dashboard with Study Timer",
+      "id": "cc52df3ed3764e578eadf6ba6ab03638",
       "width": 780,
-      "height": 3474,
+      "height": 3674,
+      "lastRefreshed": "2026-04-13",
       "files": {
         "screenshot": "screens/02-home-dashboard.png",
         "html": "screens/02-home-dashboard.html"
       },
       "urls": {
-        "screenshot": "https://lh3.googleusercontent.com/aida/ADBb0ugH9Ke7tWdIHtcIqMk9wj1jd9nHqBM6Iqr4_z8qqOwsOUbdJbIg4F84HKM67v1iPzCnweF45AFRvW9SYI1W1Kazvg4FugT5GVMTi48j-29TPhAw7rFF8spsII566nB5tVsqsFoqoIE3ggCcSkvTERL0Sr8o0g7qhEUNIc_kcAplp6ho3S7UA5p-bDRmKewbUQ3J7RlWTDhop3pQ05HreJwlJtud0Plza-f2xz432_bX6OHQOdYwGNmStU5t",
-        "html": "https://contribution.usercontent.google.com/download?c=CgthaWRhX2NvZGVmeBJ8Eh1hcHBfY29tcGFuaW9uX2dlbmVyYXRlZF9maWxlcxpbCiVodG1sXzZlNWUyZTUwZTNjMzQ5Y2Q5ODZmZDU2Y2Y1YjEyODYwEgsSBxC77_S8xwUYAZIBJAoKcHJvamVjdF9pZBIWQhQxNjIxODM0NjAwNDM4NzcxMjkwNw&filename=&opi=89354086"
+        "screenshot": "https://lh3.googleusercontent.com/aida/ADBb0uihDCkAUuY4rZIvyhLkg8FBw9flwWQMThT7scWvFwvlf2qG-EiYaTZSiFFxcli9jpgZe56J6ejgw1wqqY4BaPblJFaHZ0q2oiOOAHL6F6d7ZgtlAVqIJEtX51c6NR35xdCWu-5V5p186g6_a1-Xb8Hah7F2Ic7tQGWiR4Gygp09V08WERjBi7WJizMtwNqFFCUZ8Sres2ZA0_Z4X_npTDhYeD8d-9MzDNKr0Pt3crVdRfEBxbdmXypJ1-w",
+        "html": "https://contribution.usercontent.google.com/download?c=CgthaWRhX2NvZGVmeBJ8Eh1hcHBfY29tcGFuaW9uX2dlbmVyYXRlZF9maWxlcxpbCiVodG1sXzYzMmU0NDliYmQwNDQ5MGRiY2ZmMTcxNThhOGRmNjhhEgsSBxC77_S8xwUYAZIBJAoKcHJvamVjdF9pZBIWQhQxNjIxODM0NjAwNDM4NzcxMjkwNw&filename=&opi=89354086"
       }
     },
     {

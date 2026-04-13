@@ -452,6 +452,7 @@ fun DeviceStatusCard(
     modifier: Modifier = Modifier,
     subtitle: String? = null,
     connectionDetails: String? = null,
+    statusLabel: String? = null,
     actionLabel: String? = null,
     onActionClick: (() -> Unit)? = null
 ) {
@@ -506,7 +507,7 @@ fun DeviceStatusCard(
                     )
                 }
                 Text(
-                    text = status.toDisplayName(),
+                    text = statusLabel ?: status.toDisplayName(),
                     style = MaterialTheme.typography.labelLarge,
                     color = animatedTint
                 )

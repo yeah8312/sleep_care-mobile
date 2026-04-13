@@ -66,4 +66,50 @@ class RecommendationEngineTest {
         assertTrue(recommendation.targetSleepMinutes >= 450)
         assertTrue(recommendation.tips.isNotEmpty())
     }
+
+    @Test
+    fun `empty sleep history still produces an exam-driven recommendation`() {
+        val input = RecommendationInput(
+            sleepSessions = emptyList(),
+            drowsinessEvents = listOf(
+                DrowsinessEvent(
+                    id = "d1",
+                    timestamp = LocalDateTime.of(2026, 4, 3, 14, 30),
+                    severity = 2,
+                    durationMinutes = 6,
+                    label = "오후 졸음",
+                    deviceId = "pi",
+                )
+            ),
+            studyPlan = StudyPlan(
+                startTime = LocalTime.of(8, 0),
+                endTime = LocalTime.of(22, 0),
+                focusHours = 8,
+                days = setOf(DayOfWeek.MONDAY, DayOfWeek.TUESDAY),
+                breakPreferenceMinutes = 15,
+                autoBreakEnabled = true,
+            ),
+            exams = listOf(
+                ExamSchedule(
+                    name = "모의고사",
+                    date = LocalDate.of(2026, 4, 10),
+                    startTime = LocalTime.of(7, 0),
+                    endTime = LocalTime.of(11, 0),
+                    location = "본관",
+                    priority = 1,
+                    syncEnabled = true,
+                )
+            ),
+            userGoals = UserGoals(targetWakeTime = LocalTime.of(8, 30)),
+            generatedAt = LocalDateTime.of(2026, 4, 4, 18, 0),
+        )
+
+        val recommendation = engine.generate(input)
+
+        assertEquals(LocalTime.of(5, 30), recommendation.recommendedWakeTime)
+        assertEquals(LocalTime.of(21, 45), recommendation.recommendedBedtime)
+        assertEquals(450, recommendation.targetSleepMinutes)
+        assertTrue(recommendation.reason.contains("시험 일정"))
+        assertTrue(recommendation.tips.isNotEmpty())
+    }
 }

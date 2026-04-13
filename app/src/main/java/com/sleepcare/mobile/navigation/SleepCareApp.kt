@@ -47,6 +47,7 @@ import com.sleepcare.mobile.ui.settings.SettingsViewModel
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -203,7 +204,7 @@ fun SleepCareApp(
                     onOpenDevices = { navController.navigate(AppRoute.Devices) },
                     onResetCompleted = {
                         appViewModel.resetAndReSeed()
-                        appViewModel.showMessage(snackbarHostState, "앱 데이터를 초기화하고 샘플 데이터를 다시 불러왔습니다.")
+                        appViewModel.showMessage(snackbarHostState, "앱 데이터를 초기화하고 Pi 중심 기본 상태로 되돌렸습니다.")
                         navController.navigate(AppRoute.Onboarding) {
                             popUpTo(AppRoute.Home) { inclusive = true }
                         }
@@ -243,6 +244,11 @@ class AppViewModel @Inject constructor(
         viewModelScope.launch {
             seedAndRefresh()
         }
+        viewModelScope.launch {
+            drowsinessRepository.observeDrowsinessEvents().drop(1).collect {
+                recommendationRepository.refreshRecommendations()
+            }
+        }
     }
 
     fun refreshRecommendations() {
@@ -265,12 +271,10 @@ class AppViewModel @Inject constructor(
     }
 
     private suspend fun seedAndRefresh() {
-        sleepRepository.seedIfEmpty()
         drowsinessRepository.seedIfEmpty()
         studyPlanRepository.seedIfEmpty()
         examScheduleRepository.seedIfEmpty()
-        sleepRepository.refreshFromSource()
-        drowsinessRepository.refreshFromSource()
+        sleepRepository.seedIfEmpty()
         recommendationRepository.refreshRecommendations()
     }
 }

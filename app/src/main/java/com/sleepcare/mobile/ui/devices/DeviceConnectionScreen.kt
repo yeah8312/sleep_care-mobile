@@ -50,27 +50,36 @@ fun DeviceConnectionScreen(
     ) {
         item { Text("기기 연결", style = MaterialTheme.typography.headlineMedium) }
         items(uiState.devices) { device ->
+            val watchUnavailable = device.deviceType == DeviceType.Smartwatch
             DeviceStatusCard(
-                deviceName = device.deviceName,
-                status = device.status.toVisualStatus(),
-                subtitle = when (device.deviceType) {
-                    DeviceType.RaspberryPi -> "공부 중 졸음 감지 이벤트 수신용"
-                    DeviceType.Smartwatch -> "수면 기록 동기화용"
+                deviceName = if (watchUnavailable) "워치 앱" else device.deviceName,
+                status = if (watchUnavailable) DeviceVisualStatus.Disconnected else device.status.toVisualStatus(),
+                subtitle = if (watchUnavailable) {
+                    "워치 앱이 아직 준비되지 않아 수면 기록을 사용할 수 없습니다."
+                } else {
+                    "공부 중 졸음 감지 이벤트 수신용"
                 },
-                connectionDetails = buildString {
-                    append(device.details ?: "준비 중")
-                    device.lastSeenAt?.let { append("\n마지막 확인 ${it.toDisplayDateTime()}") }
+                connectionDetails = if (watchUnavailable) {
+                    "스마트워치 데이터는 아직 비어 있습니다.\n워치 앱이 준비되면 수면 기록이 연결됩니다."
+                } else {
+                    buildString {
+                        append(device.details ?: "준비 중")
+                        device.lastSeenAt?.let { append("\n마지막 확인 ${it.toDisplayDateTime()}") }
+                    }
                 },
-                actionLabel = when (device.status) {
+                statusLabel = if (watchUnavailable) "워치 앱 준비 중" else null,
+                actionLabel = if (watchUnavailable) null else when (device.status) {
                     ConnectionStatus.Connected -> "연결 해제"
                     ConnectionStatus.Scanning -> null
                     ConnectionStatus.Disconnected, ConnectionStatus.Failed -> "다시 시도"
                 },
-                onActionClick = {
-                    when (device.status) {
-                        ConnectionStatus.Connected -> viewModel.disconnect(device.deviceType)
-                        ConnectionStatus.Scanning -> Unit
-                        ConnectionStatus.Disconnected, ConnectionStatus.Failed -> viewModel.retry(device.deviceType)
+                onActionClick = if (watchUnavailable) null else {
+                    {
+                        when (device.status) {
+                            ConnectionStatus.Connected -> viewModel.disconnect(device.deviceType)
+                            ConnectionStatus.Scanning -> Unit
+                            ConnectionStatus.Disconnected, ConnectionStatus.Failed -> viewModel.retry(device.deviceType)
+                        }
                     }
                 },
             )
@@ -80,12 +89,12 @@ fun DeviceConnectionScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("연결 안내", style = MaterialTheme.typography.titleMedium)
                     Text(
-                        "실제 워치 세션 연동과 라즈베리파이 연동은 후속 단계에서 교체될 예정이며, 현재는 상태 흐름과 UI만 먼저 검증합니다.",
+                        "모바일 앱은 로컬 Wi-Fi에서 Raspberry Pi를 찾습니다. 워치 앱은 아직 사용할 수 없어 수면 동기화는 비어 있습니다.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Button(onClick = viewModel::startScan, modifier = Modifier.fillMaxWidth()) {
-                        Text("기기 스캔 시작")
+                        Text("로컬 Pi 다시 찾기")
                     }
                 }
             }

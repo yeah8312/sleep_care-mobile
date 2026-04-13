@@ -9,6 +9,7 @@ import com.sleepcare.mobile.data.local.RecommendationSnapshotDao
 import com.sleepcare.mobile.data.local.SleepCareDatabase
 import com.sleepcare.mobile.data.local.SleepSessionDao
 import com.sleepcare.mobile.data.local.StudyPlanDao
+import com.sleepcare.mobile.data.local.StudySessionDao
 import com.sleepcare.mobile.data.repository.DeviceConnectionRepositoryImpl
 import com.sleepcare.mobile.data.repository.DrowsinessRepositoryImpl
 import com.sleepcare.mobile.data.repository.ExamScheduleRepositoryImpl
@@ -17,17 +18,19 @@ import com.sleepcare.mobile.data.repository.SettingsRepositoryImpl
 import com.sleepcare.mobile.data.repository.SleepCareRecommendationEngine
 import com.sleepcare.mobile.data.repository.SleepRepositoryImpl
 import com.sleepcare.mobile.data.repository.StudyPlanRepositoryImpl
-import com.sleepcare.mobile.data.source.FakePiBleDataSource
-import com.sleepcare.mobile.data.source.FakeWatchSleepDataSource
+import com.sleepcare.mobile.data.repository.StudySessionRepositoryImpl
+import com.sleepcare.mobile.data.source.PiNetworkDataSourceImpl
+import com.sleepcare.mobile.data.source.UnavailableWatchSleepDataSource
 import com.sleepcare.mobile.domain.DeviceConnectionRepository
 import com.sleepcare.mobile.domain.DrowsinessRepository
 import com.sleepcare.mobile.domain.ExamScheduleRepository
-import com.sleepcare.mobile.domain.PiBleDataSource
+import com.sleepcare.mobile.domain.PiNetworkDataSource
 import com.sleepcare.mobile.domain.RecommendationEngine
 import com.sleepcare.mobile.domain.RecommendationRepository
 import com.sleepcare.mobile.domain.SettingsRepository
 import com.sleepcare.mobile.domain.SleepRepository
 import com.sleepcare.mobile.domain.StudyPlanRepository
+import com.sleepcare.mobile.domain.StudySessionRepository
 import com.sleepcare.mobile.domain.WatchSleepDataSource
 import dagger.Binds
 import dagger.Module
@@ -57,6 +60,9 @@ object AppProvidesModule {
     fun provideStudyPlanDao(database: SleepCareDatabase): StudyPlanDao = database.studyPlanDao()
 
     @Provides
+    fun provideStudySessionDao(database: SleepCareDatabase): StudySessionDao = database.studySessionDao()
+
+    @Provides
     fun provideExamScheduleDao(database: SleepCareDatabase): ExamScheduleDao = database.examScheduleDao()
 
     @Provides
@@ -69,11 +75,13 @@ object AppProvidesModule {
 
     @Provides
     @Singleton
-    fun provideWatchSleepDataSource(): WatchSleepDataSource = FakeWatchSleepDataSource()
+    fun provideWatchSleepDataSource(): WatchSleepDataSource = UnavailableWatchSleepDataSource()
 
     @Provides
     @Singleton
-    fun providePiBleDataSource(): PiBleDataSource = FakePiBleDataSource()
+    fun providePiNetworkDataSource(
+        @ApplicationContext context: Context,
+    ): PiNetworkDataSource = PiNetworkDataSourceImpl(context)
 }
 
 @Module
@@ -102,4 +110,7 @@ abstract class AppBindsModule {
 
     @Binds
     abstract fun bindRecommendationEngine(impl: SleepCareRecommendationEngine): RecommendationEngine
+
+    @Binds
+    abstract fun bindStudySessionRepository(impl: StudySessionRepositoryImpl): StudySessionRepository
 }

@@ -33,7 +33,7 @@ import kotlinx.coroutines.launch
 
 data class SettingsUiState(
     val preferences: NotificationPreferences = NotificationPreferences(),
-    val lastSyncText: String = "동기화 기록 없음",
+    val lastSyncText: String = "워치 앱 준비 중",
 )
 
 @Composable
@@ -75,7 +75,7 @@ fun SettingsScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("기기 관리", style = MaterialTheme.typography.titleMedium)
                     Text(
-                        "Smartwatch / Health Connect와 Raspberry Pi 상태를 확인합니다.",
+                        "워치 앱은 아직 사용할 수 없고 Raspberry Pi 상태만 확인합니다.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -88,7 +88,12 @@ fun SettingsScreen(
         item {
             GlassCard {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("마지막 동기화", style = MaterialTheme.typography.titleMedium)
+                    Text("연동 상태", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "워치 앱 준비 중 · Raspberry Pi 졸음 기록만 활성화됩니다.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                     Text(
                         uiState.lastSyncText,
                         style = MaterialTheme.typography.bodyMedium,
@@ -153,12 +158,13 @@ class SettingsViewModel @Inject constructor(
             preferences = preferences,
             lastSyncText = buildString {
                 append(
-                    if (lastSync.sleepSyncedAt != null) "수면 ${lastSync.sleepSyncedAt.toDisplayDateTime()}" else "수면 기록 없음"
+                    if (lastSync.drowsinessSyncedAt != null) {
+                        "Pi 졸음 ${lastSync.drowsinessSyncedAt.toDisplayDateTime()}"
+                    } else {
+                        "Pi 졸음 기록 없음"
+                    }
                 )
-                append(" · ")
-                append(
-                    if (lastSync.drowsinessSyncedAt != null) "졸음 ${lastSync.drowsinessSyncedAt.toDisplayDateTime()}" else "졸음 기록 없음"
-                )
+                append(" · 워치 앱 준비 중")
             },
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState())

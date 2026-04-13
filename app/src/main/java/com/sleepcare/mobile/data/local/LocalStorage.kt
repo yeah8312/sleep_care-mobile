@@ -23,9 +23,11 @@ import com.sleepcare.mobile.domain.ExamSchedule
 import com.sleepcare.mobile.domain.LastSyncState
 import com.sleepcare.mobile.domain.NotificationPreferences
 import com.sleepcare.mobile.domain.OnboardingState
+import com.sleepcare.mobile.domain.PiSessionSummary
 import com.sleepcare.mobile.domain.RecommendationSnapshot
 import com.sleepcare.mobile.domain.RecommendationTip
 import com.sleepcare.mobile.domain.SleepSession
+import com.sleepcare.mobile.domain.StudySessionState
 import com.sleepcare.mobile.domain.StudyPlan
 import com.sleepcare.mobile.domain.UserGoals
 import java.io.IOException
@@ -60,6 +62,21 @@ data class DrowsinessEventEntity(
     val durationMinutes: Int,
     val label: String,
     val deviceId: String,
+    val sessionId: String?,
+)
+
+@Entity(tableName = "study_sessions")
+data class StudySessionEntity(
+    @PrimaryKey val id: String,
+    val startedAt: LocalDateTime,
+    val endedAt: LocalDateTime?,
+    val phase: String,
+    val latestRiskState: String?,
+    val latestFusedScore: Double?,
+    val alertCount: Int,
+    val summaryMode: String?,
+    val summaryReason: String?,
+    val peakFusedScore: Double?,
 )
 
 @Entity(tableName = "study_plan")
@@ -148,6 +165,21 @@ interface DrowsinessEventDao {
 }
 
 @Dao
+interface StudySessionDao {
+    @Query("SELECT * FROM study_sessions ORDER BY startedAt DESC LIMIT 1")
+    fun observeLatest(): Flow<StudySessionEntity?>
+
+    @Query("SELECT * FROM study_sessions WHERE id = :id LIMIT 1")
+    suspend fun getById(id: String): StudySessionEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(item: StudySessionEntity)
+
+    @Query("DELETE FROM study_sessions")
+    suspend fun clear()
+}
+
+@Dao
 interface StudyPlanDao {
     @Query("SELECT * FROM study_plan WHERE id = :id")
     fun observeById(id: Int = StudyPlan.DEFAULT_ID): Flow<StudyPlanEntity?>
@@ -196,17 +228,19 @@ interface RecommendationSnapshotDao {
     entities = [
         SleepSessionEntity::class,
         DrowsinessEventEntity::class,
+        StudySessionEntity::class,
         StudyPlanEntity::class,
         ExamScheduleEntity::class,
         RecommendationSnapshotEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = false,
 )
 @TypeConverters(RoomConverters::class)
 abstract class SleepCareDatabase : RoomDatabase() {
     abstract fun sleepSessionDao(): SleepSessionDao
     abstract fun drowsinessEventDao(): DrowsinessEventDao
+    abstract fun studySessionDao(): StudySessionDao
     abstract fun studyPlanDao(): StudyPlanDao
     abstract fun examScheduleDao(): ExamScheduleDao
     abstract fun recommendationSnapshotDao(): RecommendationSnapshotDao
@@ -331,6 +365,7 @@ fun DrowsinessEventEntity.toDomain(): DrowsinessEvent = DrowsinessEvent(
     durationMinutes = durationMinutes,
     label = label,
     deviceId = deviceId,
+    sessionId = sessionId,
 )
 
 fun DrowsinessEvent.toEntity(): DrowsinessEventEntity = DrowsinessEventEntity(
@@ -340,7 +375,38 @@ fun DrowsinessEvent.toEntity(): DrowsinessEventEntity = DrowsinessEventEntity(
     durationMinutes = durationMinutes,
     label = label,
     deviceId = deviceId,
+    sessionId = sessionId,
 )
+
+fun StudySessionState.toEntity(): StudySessionEntity {
+    val summary = latestSummary
+    return StudySessionEntity(
+        id = sessionId ?: error("sessionId is required to persist study session state"),
+        startedAt = startedAt ?: LocalDateTime.now(),
+        endedAt = summary?.receivedAt,
+        phase = phase.name,
+        latestRiskState = latestRisk?.state,
+        latestFusedScore = latestRisk?.fusedScore,
+        alertCount = summary?.totalAlerts ?: if (latestAlert != null) 1 else 0,
+        summaryMode = summary?.mode,
+        summaryReason = summary?.summaryReason,
+        peakFusedScore = summary?.peakFusedScore,
+    )
+}
+
+fun StudySessionEntity.toSummary(): PiSessionSummary? {
+    if (endedAt == null) return null
+    return PiSessionSummary(
+        sessionId = id,
+        sequence = -1L,
+        finalState = phase,
+        totalAlerts = alertCount,
+        peakFusedScore = peakFusedScore,
+        mode = summaryMode,
+        summaryReason = summaryReason,
+        receivedAt = endedAt,
+    )
+}
 
 fun StudyPlanEntity.toDomain(): StudyPlan = StudyPlan(
     id = id,

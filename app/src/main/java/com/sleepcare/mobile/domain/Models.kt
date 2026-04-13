@@ -17,6 +17,17 @@ enum class ConnectionStatus {
     Failed,
 }
 
+enum class StudySessionPhase {
+    Idle,
+    DiscoveringPi,
+    ConnectingPi,
+    OpeningSession,
+    Running,
+    Alerting,
+    Stopping,
+    Error,
+}
+
 data class SleepSession(
     val id: String,
     val startTime: LocalDateTime,
@@ -26,7 +37,7 @@ data class SleepSession(
     val consistencyScore: Int,
     val latencyMinutes: Int,
     val awakeMinutes: Int,
-    val source: String = "Smartwatch / Health Connect",
+    val source: String = "Unavailable",
 )
 
 data class DrowsinessEvent(
@@ -36,6 +47,7 @@ data class DrowsinessEvent(
     val durationMinutes: Int,
     val label: String,
     val deviceId: String,
+    val sessionId: String? = null,
 )
 
 data class StudyPlan(
@@ -97,6 +109,73 @@ data class ConnectedDeviceState(
     val lastSeenAt: LocalDateTime? = null,
 )
 
+data class PiServiceEndpoint(
+    val serviceName: String,
+    val host: String,
+    val port: Int,
+    val wsPath: String,
+    val deviceId: String,
+)
+
+data class PiEnvelope(
+    val version: Int,
+    val type: String,
+    val sessionId: String?,
+    val sequence: Long,
+    val source: String,
+    val sentAtMs: Long,
+    val ackRequired: Boolean,
+    val body: String = "{}",
+)
+
+data class PiHelloAck(
+    val deviceId: String,
+    val mode: String?,
+    val protocol: String?,
+)
+
+data class PiRiskUpdate(
+    val sessionId: String,
+    val sequence: Long,
+    val mode: String,
+    val eyeScore: Double?,
+    val hrScore: Double?,
+    val fusedScore: Double?,
+    val state: String,
+    val recommendedFlushSec: Int?,
+    val receivedAt: LocalDateTime,
+)
+
+data class PiAlertFire(
+    val sessionId: String,
+    val sequence: Long,
+    val level: Int,
+    val reason: String,
+    val durationMs: Long,
+    val receivedAt: LocalDateTime,
+)
+
+data class PiSessionSummary(
+    val sessionId: String,
+    val sequence: Long,
+    val finalState: String,
+    val totalAlerts: Int,
+    val peakFusedScore: Double?,
+    val mode: String?,
+    val summaryReason: String?,
+    val receivedAt: LocalDateTime,
+)
+
+data class StudySessionState(
+    val sessionId: String? = null,
+    val phase: StudySessionPhase = StudySessionPhase.Idle,
+    val startedAt: LocalDateTime? = null,
+    val latestRisk: PiRiskUpdate? = null,
+    val latestAlert: PiAlertFire? = null,
+    val latestSummary: PiSessionSummary? = null,
+    val message: String? = null,
+)
+
 data class UserGoals(
     val targetWakeTime: LocalTime? = null,
     val preferredBedtime: LocalTime? = null,
@@ -121,6 +200,7 @@ data class HomeDashboardSnapshot(
     val recentDrowsinessCount: Int,
     val recommendation: RecommendationSnapshot?,
     val nextExam: ExamSchedule?,
+    val sessionState: StudySessionState = StudySessionState(),
 )
 
 data class SleepAnalysisSnapshot(
@@ -129,6 +209,8 @@ data class SleepAnalysisSnapshot(
     val consistency: Int,
     val latencyMinutes: Int,
     val weeklyDurations: List<Int>,
+    val isAvailable: Boolean = true,
+    val emptyReason: String? = null,
 )
 
 data class DrowsinessAnalysisSnapshot(
@@ -136,5 +218,5 @@ data class DrowsinessAnalysisSnapshot(
     val peakWindowLabel: String,
     val focusScore: Int,
     val recentEvents: List<DrowsinessEvent>,
+    val liveRisk: PiRiskUpdate? = null,
 )
-

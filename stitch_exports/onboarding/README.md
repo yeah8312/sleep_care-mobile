@@ -15,6 +15,7 @@ Download status:
 
 - A direct `curl -L` export succeeded in this session on `2026-04-04`.
 - The `screens/` folder now contains the downloaded PNG and HTML files for the 10 requested screens.
+- Screen `02-home-dashboard.*` was refreshed on `2026-04-13` to match the updated Stitch screen `cc52df3ed3764e578eadf6ba6ab03638` (`Home Dashboard with Study Timer`).
 
 Design system note:
 

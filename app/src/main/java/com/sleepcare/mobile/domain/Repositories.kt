@@ -6,11 +6,15 @@ interface WatchSleepDataSource {
     suspend fun readRecentSleepSessions(): List<SleepSession>
 }
 
-interface PiBleDataSource {
+interface PiNetworkDataSource {
     fun observeConnectionState(): Flow<ConnectedDeviceState>
-    fun observeDetectedEvents(): Flow<List<DrowsinessEvent>>
-    suspend fun startScan()
-    suspend fun retry()
+    fun observeRiskState(): Flow<PiRiskUpdate?>
+    fun observeAlerts(): Flow<PiAlertFire>
+    fun observeSessionSummaries(): Flow<PiSessionSummary>
+    suspend fun discoverAndConnect(): Boolean
+    suspend fun startSession(sessionId: String): Boolean
+    suspend fun stopSession(sessionId: String): PiSessionSummary?
+    suspend fun retry(): Boolean
     suspend fun disconnect()
 }
 
@@ -55,6 +59,12 @@ interface DeviceConnectionRepository {
     suspend fun disconnect(deviceType: DeviceType)
 }
 
+interface StudySessionRepository {
+    fun observeSessionState(): Flow<StudySessionState>
+    suspend fun startSession()
+    suspend fun stopSession()
+}
+
 interface SettingsRepository {
     fun observeOnboardingState(): Flow<OnboardingState>
     suspend fun setOnboardingCompleted(completed: Boolean)
@@ -91,4 +101,3 @@ object ScoreCalculator {
         return (85 - eventPenalty - (durationPenalty / 3) + sleepBoost).coerceIn(25, 100)
     }
 }
-
