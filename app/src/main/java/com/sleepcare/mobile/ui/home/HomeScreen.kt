@@ -23,6 +23,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
+import com.sleepcare.mobile.data.repository.buildLatestHomeSleepSession
 import com.sleepcare.mobile.domain.DrowsinessRepository
 import com.sleepcare.mobile.domain.ExamScheduleRepository
 import com.sleepcare.mobile.domain.HomeDashboardSnapshot
@@ -57,7 +58,7 @@ data class HomeUiState(
     val timelineSegments: List<TimelineSegment> = emptyList(),
     val studySession: StudySessionUiState = StudySessionUiState(),
     val sleepAvailable: Boolean = false,
-    val sleepEmptyReason: String = "워치 수면 동기화가 아직 비어 있습니다. 워치 앱 구현과 함께 연동됩니다.",
+    val sleepEmptyReason: String = "Health Connect 수면 데이터가 아직 없습니다.",
 )
 
 data class StudySessionUiState(
@@ -199,11 +200,12 @@ class HomeViewModel @Inject constructor(
         examScheduleRepository.observeExamSchedules(),
         studySessionRepository.observeSessionState(),
     ) { sleeps, drowsiness, recommendation, exams, sessionState ->
-        val sleepAvailable = sleeps.isNotEmpty()
+        val latestSleep = buildLatestHomeSleepSession(sleeps)
+        val sleepAvailable = latestSleep != null
         val recentDrowsinessCount = drowsiness.count { it.timestamp.isAfter(LocalDateTime.now().minusHours(24)) }
         HomeUiState(
             snapshot = HomeDashboardSnapshot(
-                latestSleep = sleeps.firstOrNull(),
+                latestSleep = latestSleep,
                 recentDrowsinessCount = recentDrowsinessCount,
                 recommendation = recommendation,
                 nextExam = exams.firstOrNull(),
@@ -214,7 +216,7 @@ class HomeViewModel @Inject constructor(
             sleepEmptyReason = if (sleepAvailable) {
                 "최근 수면 데이터를 불러왔습니다."
             } else {
-                "워치 수면 동기화가 아직 비어 있습니다. 워치 앱 구현과 함께 연동됩니다."
+                "Health Connect 수면 데이터가 아직 없습니다. 권한, 가용성, 또는 실제 기록 여부를 확인해 주세요."
             },
             timelineSegments = listOf(
                 TimelineSegment("안정 집중", 0.32f, SleepCarePrimary.copy(alpha = 0.22f), "오전 집중 구간"),

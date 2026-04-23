@@ -228,9 +228,17 @@ data class SleepAnalysisSnapshot(
     val averageMinutes: Int,
     val consistency: Int,
     val latencyMinutes: Int,
+    val awakeMinutes: Int,
     val weeklyDurations: List<Int>,
     val isAvailable: Boolean = true,
     val emptyReason: String? = null,
+)
+
+data class SleepDaySummary(
+    val date: LocalDate,
+    val primarySession: SleepSession,
+    val totalMinutes: Int,
+    val extraSleepMinutes: Int,
 )
 
 data class DrowsinessAnalysisSnapshot(
