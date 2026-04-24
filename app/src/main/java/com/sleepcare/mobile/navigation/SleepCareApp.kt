@@ -34,6 +34,7 @@ import com.sleepcare.mobile.ui.analysis.SleepAnalysisDetailScreen
 import com.sleepcare.mobile.ui.components.AppBottomBar
 import com.sleepcare.mobile.ui.devices.DeviceConnectionScreen
 import com.sleepcare.mobile.ui.devices.DevicesViewModel
+import com.sleepcare.mobile.ui.devices.PiPairingScreen
 import com.sleepcare.mobile.ui.home.HomeScreen
 import com.sleepcare.mobile.ui.home.HomeViewModel
 import com.sleepcare.mobile.ui.onboarding.OnboardingScreen
@@ -59,6 +60,7 @@ object AppRoute {
     const val SleepAnalysisDetail = "sleep-analysis-detail"
     const val DrowsinessAnalysisDetail = "drowsiness-analysis-detail"
     const val Devices = "devices"
+    const val PiPairing = "pi-pairing"
     const val Schedule = "schedule"
     const val StudyPlan = "study-plan"
     const val ExamSchedule = "exam-schedule"
@@ -161,6 +163,13 @@ fun SleepCareApp(
                 DeviceConnectionScreen(
                     paddingValues = paddingValues,
                     viewModel = viewModel,
+                    onOpenPiPairing = { navController.navigate(AppRoute.PiPairing) },
+                )
+            }
+            composable(AppRoute.PiPairing) {
+                PiPairingScreen(
+                    paddingValues = paddingValues,
+                    onBack = { navController.popBackStack() },
                 )
             }
             composable(AppRoute.Schedule) {
@@ -284,7 +293,7 @@ private fun androidx.navigation.NavDestination.rootRoute(): String? {
     return when {
         routes.any { it == AppRoute.Analysis || it == AppRoute.SleepAnalysisDetail || it == AppRoute.DrowsinessAnalysisDetail } -> AppRoute.Analysis
         routes.any { it == AppRoute.Schedule || it == AppRoute.StudyPlan || it == AppRoute.ExamSchedule } -> AppRoute.Schedule
-        routes.any { it == AppRoute.Settings || it == AppRoute.Devices } -> AppRoute.Settings
+        routes.any { it == AppRoute.Settings || it == AppRoute.Devices || it == AppRoute.PiPairing } -> AppRoute.Settings
         routes.any { it == AppRoute.Home } -> AppRoute.Home
         else -> route
     }

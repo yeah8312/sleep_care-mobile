@@ -770,11 +770,15 @@ stateDiagram-v2
 
 ### 19.1 기기 식별
 - 파이는 `SleepCare-Pi-<shortid>` 로 광고
-- 최초 등록 시 QR 또는 6자리 코드 방식 사용
+- 최초 등록은 QR 기반으로 진행한다.
+- QR payload와 Pi 개발 요구사항은 [pi-qr-pairing.md](./pi-qr-pairing.md)를 기준으로 한다.
+- 앱은 QR의 `device_id`, `service`, `ws`, `spki_sha256`을 신뢰 정보로 저장한다.
 
 ### 19.2 네트워크 보안
 - `WSS` 사용
-- 인증서 핀닝 또는 등록된 파이 인증서 신뢰
+- 인증서는 앱에 고정 포함하지 않고, QR로 등록한 **SPKI SHA-256 fingerprint**를 pin으로 사용한다.
+- 앱은 WSS 연결 시 서버 leaf certificate의 public key SPKI SHA-256을 계산해 등록된 `spki_sha256`과 비교한다.
+- pin이 다르면 등록된 Pi가 아니거나 키가 교체된 것으로 보고 연결을 차단한다.
 - 모든 메시지는 `sid`, `seq` 검증
 
 ### 19.3 메시지 검증

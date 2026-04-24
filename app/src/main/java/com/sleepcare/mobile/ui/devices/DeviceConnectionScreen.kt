@@ -9,6 +9,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -22,6 +23,8 @@ import com.sleepcare.mobile.domain.ConnectionStatus
 import com.sleepcare.mobile.domain.ConnectedDeviceState
 import com.sleepcare.mobile.domain.DeviceConnectionRepository
 import com.sleepcare.mobile.domain.DeviceType
+import com.sleepcare.mobile.domain.TrustedPiDevice
+import com.sleepcare.mobile.data.source.PiPairingCodec
 import com.sleepcare.mobile.ui.components.DeviceStatusCard
 import com.sleepcare.mobile.ui.components.DeviceVisualStatus
 import com.sleepcare.mobile.ui.components.GlassCard
@@ -29,17 +32,19 @@ import com.sleepcare.mobile.ui.components.toDisplayDateTime
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 data class DevicesUiState(
     val devices: List<ConnectedDeviceState> = emptyList(),
+    val trustedPi: TrustedPiDevice? = null,
 )
 
 @Composable
 fun DeviceConnectionScreen(
     paddingValues: PaddingValues,
+    onOpenPiPairing: () -> Unit,
     viewModel: DevicesViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -49,6 +54,35 @@ fun DeviceConnectionScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         item { Text("기기 연결", style = MaterialTheme.typography.headlineMedium) }
+        item {
+            GlassCard {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Raspberry Pi 등록", style = MaterialTheme.typography.titleMedium)
+                    val trustedPi = uiState.trustedPi
+                    if (trustedPi == null) {
+                        Text(
+                            "Pi 화면의 QR 코드를 스캔해 이 앱이 신뢰할 SPKI fingerprint를 등록합니다.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else {
+                        Text(
+                            "${trustedPi.displayName} · ${trustedPi.deviceId}\nSPKI ${PiPairingCodec.shortPin(trustedPi.spkiSha256)}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Button(onClick = onOpenPiPairing, modifier = Modifier.fillMaxWidth()) {
+                        Text(if (trustedPi == null) "새 Pi QR 등록" else "QR로 재등록")
+                    }
+                    if (trustedPi != null) {
+                        OutlinedButton(onClick = viewModel::forgetPi, modifier = Modifier.fillMaxWidth()) {
+                            Text("등록 해제")
+                        }
+                    }
+                }
+            }
+        }
         items(uiState.devices) { device ->
             DeviceStatusCard(
                 deviceName = if (device.deviceType == DeviceType.Smartwatch) "Galaxy Watch" else device.deviceName,
@@ -111,8 +145,12 @@ fun DeviceConnectionScreen(
 class DevicesViewModel @Inject constructor(
     private val deviceConnectionRepository: DeviceConnectionRepository,
 ) : ViewModel() {
-    val uiState = deviceConnectionRepository.observeDevices()
-        .map { DevicesUiState(devices = it) }
+    val uiState = combine(
+        deviceConnectionRepository.observeDevices(),
+        deviceConnectionRepository.observeTrustedPi(),
+    ) { devices, trustedPi ->
+        DevicesUiState(devices = devices, trustedPi = trustedPi)
+    }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DevicesUiState())
 
     fun startScan() {
@@ -125,6 +163,10 @@ class DevicesViewModel @Inject constructor(
 
     fun disconnect(deviceType: DeviceType) {
         viewModelScope.launch { deviceConnectionRepository.disconnect(deviceType) }
+    }
+
+    fun forgetPi() {
+        viewModelScope.launch { deviceConnectionRepository.forgetPi() }
     }
 }
 

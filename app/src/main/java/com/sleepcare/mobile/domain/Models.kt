@@ -119,6 +119,28 @@ data class ConnectedDeviceState(
     val lastSeenAt: LocalDateTime? = null,
 )
 
+data class TrustedPiDevice(
+    val deviceId: String,
+    val displayName: String,
+    val serviceType: String,
+    val wsPath: String,
+    val spkiSha256: String,
+    val registeredAtMs: Long,
+)
+
+data class PiPairingPayload(
+    val proto: String,
+    val deviceId: String,
+    val displayName: String?,
+    val service: String,
+    val ws: String,
+    val tls: Int,
+    val spkiSha256: String,
+    val issuedAtMs: Long? = null,
+    val keyId: String? = null,
+    val pinHint: String? = null,
+)
+
 data class PiServiceEndpoint(
     val serviceName: String,
     val host: String,

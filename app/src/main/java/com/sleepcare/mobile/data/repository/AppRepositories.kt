@@ -10,6 +10,7 @@ import com.sleepcare.mobile.data.local.StudyPlanDao
 import com.sleepcare.mobile.data.local.StudySessionDao
 import com.sleepcare.mobile.data.local.toDomain
 import com.sleepcare.mobile.data.local.toEntity
+import com.sleepcare.mobile.data.source.PiPairingCodec
 import com.sleepcare.mobile.domain.ConnectionStatus
 import com.sleepcare.mobile.domain.ConnectedDeviceState
 import com.sleepcare.mobile.domain.DeviceConnectionRepository
@@ -40,6 +41,7 @@ import com.sleepcare.mobile.domain.StudyPlanRepository
 import com.sleepcare.mobile.domain.StudySessionPhase
 import com.sleepcare.mobile.domain.StudySessionRepository
 import com.sleepcare.mobile.domain.StudySessionState
+import com.sleepcare.mobile.domain.TrustedPiDevice
 import com.sleepcare.mobile.domain.UserGoals
 import com.sleepcare.mobile.domain.WatchFlushPolicy
 import com.sleepcare.mobile.domain.WatchSessionClosed
@@ -47,8 +49,8 @@ import com.sleepcare.mobile.domain.WatchSessionConfig
 import com.sleepcare.mobile.domain.WatchSessionDataSource
 import com.sleepcare.mobile.domain.WatchSessionError
 import com.sleepcare.mobile.domain.WatchSessionReady
-import com.sleepcare.mobile.data.source.HealthConnectSleepDataSource
 import com.sleepcare.mobile.data.source.HealthConnectSleepState
+import com.sleepcare.mobile.data.source.HealthConnectSleepDataSource
 import java.time.DayOfWeek
 import java.time.Duration
 import java.time.LocalDate
@@ -231,11 +233,14 @@ class RecommendationRepositoryImpl @Inject constructor(
 class DeviceConnectionRepositoryImpl @Inject constructor(
     private val piNetworkDataSource: PiNetworkDataSource,
     private val watchSessionDataSource: WatchSessionDataSource,
+    private val preferencesStore: PreferencesStore,
 ) : DeviceConnectionRepository {
     override fun observeDevices(): Flow<List<ConnectedDeviceState>> =
         combine(piNetworkDataSource.observeConnectionState(), watchSessionDataSource.observeConnectionState()) { pi, watch ->
             listOf(pi, watch)
         }
+
+    override fun observeTrustedPi(): Flow<TrustedPiDevice?> = preferencesStore.trustedPiDevice
 
     override suspend fun startScan() {
         watchSessionDataSource.refreshConnection()
@@ -254,6 +259,19 @@ class DeviceConnectionRepositoryImpl @Inject constructor(
             DeviceType.RaspberryPi -> piNetworkDataSource.disconnect()
             DeviceType.Smartwatch -> watchSessionDataSource.disconnect()
         }
+    }
+
+    override suspend fun registerPiFromQr(rawPayload: String): Result<TrustedPiDevice> = runCatching {
+        val trustedPi = PiPairingCodec.toTrustedDevice(PiPairingCodec.parse(rawPayload))
+        preferencesStore.updateTrustedPiDevice(trustedPi)
+        piNetworkDataSource.disconnect()
+        piNetworkDataSource.discoverAndConnect()
+        trustedPi
+    }
+
+    override suspend fun forgetPi() {
+        piNetworkDataSource.disconnect()
+        preferencesStore.clearTrustedPiDevice()
     }
 }
 

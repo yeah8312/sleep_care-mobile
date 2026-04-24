@@ -12,6 +12,11 @@
 - `:watch-contracts` 기준으로 Wear OS Data Layer 연결 상태, 워치 세션 시작/중지, `session.ready / error / closed`, 심박 샘플 큐/커서, `hr.ingest` 중계 경로를 구현했다.
 - 실제 수면 데이터는 Health Connect 기반으로 읽고, 홈/분석/설정 화면에서 권한 없음/미지원/업데이트 필요/데이터 없음 상태를 구분한다.
 - 설정 화면에서 Health Connect 수면 읽기 권한을 직접 요청할 수 있고, 앱 manifest에는 `android.permission.health.READ_SLEEP`를 선언했다.
+- Health Connect 앱에서 이 앱이 노출되도록 onboarding activity, rationale activity, provider query를 manifest에 반영했다.
+- 권한 팝업이 바로 뜨지 않는 경우를 위해 설정 화면에서 Health Connect 관리 화면과 업데이트 화면으로 직접 이동할 수 있다.
+- 분석 화면의 수면 점수는 `최근 7일 수면 점수`로 표시하고, 규칙성은 취침/기상 시각 일관성 기준으로 계산한다.
+- 주간 수면 리듬은 `기상한 날짜` 기준 `대표 수면 1개 + 추가 수면` 구조를 사용하며, `3시간 이하 공백`의 분할 밤잠은 병합한다.
+- 홈의 `어제 수면 상태` 카드도 같은 수면일 집계 규칙을 사용한다.
 - `androidx.health.connect:connect-client:1.1.0` 요구사항에 맞춰 Android 모듈 `compileSdk`를 36으로 올렸다.
 
 ## 주요 기능
@@ -60,7 +65,9 @@
 
 ### 수면 데이터 연동
 - Health Connect 기반 실제 연동을 사용한다.
-- 워치 앱은 수면 기록을 직접 읽지 않고, 모바일 앱이 수면 세션과 stage 기반 지표를 계산해 분석/추천에 반영한다.
+- 워치 앱은 수면 기록을 직접 읽지 않고, 모바일 앱이 수면 세션을 읽어 분석/추천에 반영한다.
+- `잠들기 지연`은 원본 앱별 신뢰도 차이 때문에 현재 분석 UI에서 제외하고, 총 수면 시간·밤중 각성·취침/기상 일관성 중심으로 표시한다.
+- 계산식과 집계 규칙의 최신 문서는 [sleep-metrics.md](./sleep-metrics.md)를 참조한다.
 
 ## 수면 스케줄 제안 기능
 ### 학습 플랜 기반
@@ -114,6 +121,7 @@
 - 세션 시작/종료 UX 방식
 - 분석 결과 시각화 방식
 - 수면 데이터 실제 연동 경로
+- Health Connect onboarding/permissions 배포 시 개인정보처리방침 문구 정합성
 - Samsung Health Sensor SDK 실기기 연결 방식
 - 워치 앱 연결 시점과 프로토콜 세부 확장 범위
 - 참고 의견: 홈 화면은 "어제 수면 상태", "최근 졸음 빈도", "오늘 추천 취침 시간" 중심 구성이 적합하다.

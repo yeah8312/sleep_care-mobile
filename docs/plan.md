@@ -11,6 +11,10 @@
 - 모바일 앱은 워치 세션 handshake, ACK 커서, 백필, `hr.ingest`, 진동 경고 요청을 포함한 중계 구조를 반영했다.
 - 수면 데이터는 Health Connect 기반으로 읽고, 권한/미지원/데이터 없음 상태를 구분해 분석/설정 화면에 반영한다.
 - 설정 화면에서 Health Connect 수면 권한 요청을 직접 수행할 수 있고, manifest에는 `READ_SLEEP`를 선언했다.
+- Health Connect 앱에서 이 앱이 보이도록 onboarding/rationale activity와 provider query를 추가했다.
+- 수면 분석 상세 화면은 Stitch 산출물을 바탕으로 재구성했고, `최근 7일 수면 점수`, `최근 수면 구조`, `주간 수면 리듬`을 표시한다.
+- 규칙성은 이제 sleep stage 비율이 아니라 취침/기상 시각 일관성 기준으로 계산한다.
+- 주간 수면 집계는 `기상한 날짜` 기준 대표 수면 1개와 추가 수면으로 묶고, `3시간 이하 공백`의 분할 밤잠은 병합한다.
 - Health Connect 1.1.0 요구사항에 맞춰 앱/워치 Android 모듈 `compileSdk`를 36으로 맞췄다.
 
 ## 1. 프로젝트 개요
@@ -96,7 +100,8 @@
 - 기기 연결과 세션 시작/종료
 - Pi 위험도/알림 수신 및 저장
 - 세션 로그 저장과 분석 화면 제공
-- 수면 기록 empty state 표시
+- Health Connect 수면 권한 요청과 설정 진입
+- 주간 수면 분석과 홈의 어제 수면 상태 표시
 - 수면 스케줄 제안과 리마인더 제공
 
 ### 5.3 워치 앱
@@ -122,6 +127,7 @@
 - 시험 일정과 학습 플랜을 반영해 권장 취침/기상 시간을 제안한다.
 - 실시간 심박 데이터는 세션 해석 보조 지표로 활용한다.
 - 수면 데이터가 없을 때도 추천이 동작해야 한다.
+- 세부 계산식과 수면일 집계 규칙은 [sleep-metrics.md](./sleep-metrics.md)에 정리한다.
 
 ## 7. 단계별 우선순위
 
@@ -168,6 +174,7 @@
 - [모바일 앱 계획](./plan-mobile-app.md)
 - [워치 앱 계획](./plan-watch-app.md)
 - [데이터 및 추천 계획](./plan-data-and-recommendation.md)
+- [수면 지표 계산식](./sleep-metrics.md)
 - [통신 및 판단 아키텍처](./sleepcare_protocol_design.md)
 - [노션 허브 초안](./notion-project-hub.md)
 - [노션 논의 주제](./notion-discussion-topics.md)

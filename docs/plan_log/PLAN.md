@@ -12,6 +12,12 @@
 - 모바일 앱은 워치 `session.ready / error / closed`, ACK 커서, 백필 요청, `hr.ingest`, 진동 경고 요청을 반영했다.
 - 모바일 앱 수면 데이터는 Health Connect 기반으로 연결했고, 권한/미지원/업데이트 필요/데이터 없음 상태를 분기한다.
 - 설정 화면에서 Health Connect 권한 요청을 직접 올릴 수 있게 했고, manifest에 `android.permission.health.READ_SLEEP`를 선언했다.
+- Health Connect 앱에서 이 앱이 직접 연결 대상으로 보이도록 onboarding/rationale activity와 provider query를 추가했다.
+- 권한 창이 뜨지 않는 경우를 위해 설정 화면에서 Health Connect 관리/업데이트 화면으로 직접 이동할 수 있게 했다.
+- 수면 분석 화면을 Stitch 산출물 방향으로 재구성했고, 상단 카드는 `최근 7일 수면 점수`로 명확히 표시한다.
+- 규칙성은 취침/기상 시각 일관성 점수로 바꿨고, 관련 계산식은 [sleep-metrics.md](../sleep-metrics.md)에 문서화했다.
+- 주간 수면 리듬은 `기상한 날짜` 기준 대표 수면 1개와 추가 수면으로 집계하며, `3시간 이하 공백`의 분할 밤잠은 병합한다.
+- 홈의 `어제 수면 상태` 카드도 같은 집계 기준을 사용하도록 수정했다.
 - Android Studio 기준 `:app:compileDebugKotlin`, `:watch:compileDebugKotlin`, `:watch-contracts:test`, `:app:testDebugUnitTest` 검증을 통과했다.
 - Samsung Health Sensor SDK AAR은 아직 미연결이라 워치 센서 backend는 placeholder 상태다.
 

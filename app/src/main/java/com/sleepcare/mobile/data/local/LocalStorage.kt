@@ -29,9 +29,11 @@ import com.sleepcare.mobile.domain.RecommendationTip
 import com.sleepcare.mobile.domain.SleepSession
 import com.sleepcare.mobile.domain.StudySessionState
 import com.sleepcare.mobile.domain.StudyPlan
+import com.sleepcare.mobile.domain.TrustedPiDevice
 import com.sleepcare.mobile.domain.UserGoals
 import com.sleepcare.mobile.domain.WatchCursor
 import com.sleepcare.mobile.domain.WatchHeartRateSample
+import com.sleepcare.mobile.data.source.PiPairingCodec
 import java.io.IOException
 import java.time.DayOfWeek
 import java.time.LocalDate
@@ -315,6 +317,7 @@ class PreferencesStore(private val context: Context) {
         val preferredBedtime = stringPreferencesKey("preferred_bedtime")
         val sleepSyncedAt = stringPreferencesKey("sleep_synced_at")
         val drowsinessSyncedAt = stringPreferencesKey("drowsiness_synced_at")
+        val trustedPiDevice = stringPreferencesKey("trusted_pi_device")
     }
 
     val onboardingState: Flow<OnboardingState> = context.dataStore.safeData()
@@ -342,6 +345,11 @@ class PreferencesStore(private val context: Context) {
                 sleepSyncedAt = it[Keys.sleepSyncedAt]?.let(LocalDateTime::parse),
                 drowsinessSyncedAt = it[Keys.drowsinessSyncedAt]?.let(LocalDateTime::parse),
             )
+        }
+
+    val trustedPiDevice: Flow<TrustedPiDevice?> = context.dataStore.safeData()
+        .map { preferences ->
+            preferences[Keys.trustedPiDevice]?.let(PiPairingCodec::parseTrustedDevice)
         }
 
     suspend fun setOnboardingCompleted(completed: Boolean) {
@@ -383,6 +391,16 @@ class PreferencesStore(private val context: Context) {
                 it[Keys.drowsinessSyncedAt] = state.drowsinessSyncedAt.toString()
             }
         }
+    }
+
+    suspend fun updateTrustedPiDevice(device: TrustedPiDevice) {
+        context.dataStore.edit {
+            it[Keys.trustedPiDevice] = with(PiPairingCodec) { device.toJson() }
+        }
+    }
+
+    suspend fun clearTrustedPiDevice() {
+        context.dataStore.edit { it.remove(Keys.trustedPiDevice) }
     }
 
     suspend fun clear() {

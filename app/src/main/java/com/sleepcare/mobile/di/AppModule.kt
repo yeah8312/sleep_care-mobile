@@ -91,7 +91,8 @@ object AppProvidesModule {
     @Singleton
     fun providePiNetworkDataSource(
         @ApplicationContext context: Context,
-    ): PiNetworkDataSource = PiNetworkDataSourceImpl(context)
+        preferencesStore: PreferencesStore,
+    ): PiNetworkDataSource = PiNetworkDataSourceImpl(context, preferencesStore)
 }
 
 @Module

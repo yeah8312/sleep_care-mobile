@@ -4,8 +4,7 @@ import android.content.Context
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
 import android.net.wifi.WifiManager
-import androidx.annotation.RawRes
-import com.sleepcare.mobile.R
+import com.sleepcare.mobile.data.local.PreferencesStore
 import com.sleepcare.mobile.domain.ConnectionStatus
 import com.sleepcare.mobile.domain.ConnectedDeviceState
 import com.sleepcare.mobile.domain.DeviceType
@@ -16,12 +15,13 @@ import com.sleepcare.mobile.domain.PiNetworkDataSource
 import com.sleepcare.mobile.domain.PiRiskUpdate
 import com.sleepcare.mobile.domain.PiServiceEndpoint
 import com.sleepcare.mobile.domain.PiSessionSummary
+import com.sleepcare.mobile.domain.TrustedPiDevice
 import com.sleepcare.mobile.domain.WatchHeartRateSample
 import com.sleepcare.mobile.domain.WatchSleepDataSource
 import dagger.hilt.android.qualifiers.ApplicationContext
-import java.security.KeyStore
 import java.security.SecureRandom
-import java.security.cert.CertificateFactory
+import java.security.cert.CertificateException
+import java.security.cert.X509Certificate
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -31,7 +31,6 @@ import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
 import javax.net.ssl.SSLContext
-import javax.net.ssl.TrustManagerFactory
 import javax.net.ssl.X509TrustManager
 import kotlin.coroutines.resume
 import kotlinx.coroutines.CompletableDeferred
@@ -41,6 +40,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -170,6 +170,7 @@ private fun WatchHeartRateSample.toHrQuality(): String {
 @Singleton
 class PiNetworkDataSourceImpl @Inject constructor(
     @ApplicationContext private val context: Context,
+    private val preferencesStore: PreferencesStore,
 ) : PiNetworkDataSource {
     private val connectionState = MutableStateFlow(
         ConnectedDeviceState(
@@ -202,21 +203,30 @@ class PiNetworkDataSourceImpl @Inject constructor(
     override suspend fun discoverAndConnect(): Boolean = withContext(Dispatchers.IO) {
         if (connectionState.value.status == ConnectionStatus.Connected && webSocket != null) return@withContext true
 
+        val trustedPi = preferencesStore.trustedPiDevice.first()
+        if (trustedPi == null) {
+            connectionState.value = connectionState.value.copy(
+                status = ConnectionStatus.Failed,
+                details = "Raspberry Pi 등록이 필요합니다. Pi 화면의 QR 코드를 먼저 스캔해 주세요.",
+            )
+            return@withContext false
+        }
+
         connectionState.value = connectionState.value.copy(
             status = ConnectionStatus.Scanning,
-            details = "로컬 Wi-Fi에서 SleepCare Pi를 찾는 중",
+            details = "등록된 Pi(${trustedPi.deviceId})를 로컬 Wi-Fi에서 찾는 중입니다.",
         )
-        val discovered = discoverEndpoint()
+        val discovered = discoverEndpoint(trustedPi)
         if (discovered == null) {
             connectionState.value = connectionState.value.copy(
                 status = ConnectionStatus.Failed,
-                details = "SleepCare Pi를 찾지 못했습니다. 같은 Wi-Fi에 연결되어 있는지 확인하세요.",
+                details = "등록된 SleepCare Pi를 찾지 못했습니다. 같은 Wi-Fi에 연결되어 있는지 확인해 주세요.",
             )
             return@withContext false
         }
 
         endpoint = discovered
-        connectWebSocket(discovered)
+        connectWebSocket(discovered, trustedPi)
     }
 
     override suspend fun startSession(
@@ -323,8 +333,11 @@ class PiNetworkDataSourceImpl @Inject constructor(
         )
     }
 
-    private suspend fun connectWebSocket(endpoint: PiServiceEndpoint): Boolean = withContext(Dispatchers.IO) {
-        val trustManager = resourceTrustManager(context, R.raw.sleepcare_pi_dev_cert)
+    private suspend fun connectWebSocket(
+        endpoint: PiServiceEndpoint,
+        trustedPi: TrustedPiDevice,
+    ): Boolean = withContext(Dispatchers.IO) {
+        val trustManager = SpkiPinningTrustManager(trustedPi.spkiSha256)
         val sslContext = SSLContext.getInstance("TLS")
         sslContext.init(null, arrayOf(trustManager), SecureRandom())
         val okHttpClient = OkHttpClient.Builder()
@@ -338,9 +351,9 @@ class PiNetworkDataSourceImpl @Inject constructor(
 
         connectionState.value = ConnectedDeviceState(
             deviceType = DeviceType.RaspberryPi,
-            deviceName = endpoint.serviceName,
+            deviceName = trustedPi.displayName,
             status = ConnectionStatus.Scanning,
-            details = "보안 채널 연결 중",
+            details = "SPKI pin 검증으로 보안 채널 연결 중입니다.",
         )
 
         val waiter = CompletableDeferred<Boolean>()
@@ -387,7 +400,7 @@ class PiNetworkDataSourceImpl @Inject constructor(
                 if (!manualDisconnect) {
                     connectionState.value = ConnectedDeviceState(
                         deviceType = DeviceType.RaspberryPi,
-                        deviceName = endpoint.serviceName,
+                        deviceName = trustedPi.displayName,
                         status = ConnectionStatus.Failed,
                         details = t.message ?: "보안 채널 연결에 실패했습니다.",
                     )
@@ -456,7 +469,7 @@ class PiNetworkDataSourceImpl @Inject constructor(
 
     private fun sendEnvelope(payload: String): Boolean = webSocket?.send(payload) == true
 
-    private suspend fun discoverEndpoint(): PiServiceEndpoint? = withContext(Dispatchers.IO) {
+    private suspend fun discoverEndpoint(trustedPi: TrustedPiDevice): PiServiceEndpoint? = withContext(Dispatchers.IO) {
         val nsdManager = context.getSystemService(Context.NSD_SERVICE) as NsdManager
         val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
         val lock = wifiManager.createMulticastLock("sleepcare-pi-discovery").apply {
@@ -481,13 +494,13 @@ class PiNetworkDataSourceImpl @Inject constructor(
                         override fun onDiscoveryStarted(serviceType: String) = Unit
 
                         override fun onServiceFound(serviceInfo: NsdServiceInfo) {
-                            if (resolved || serviceInfo.serviceType != NSD_SERVICE_TYPE) return
+                            if (resolved || serviceInfo.serviceType != trustedPi.serviceType) return
                             nsdManager.resolveService(serviceInfo, object : NsdManager.ResolveListener {
                                 override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) = Unit
 
                                 override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
                                     if (resolved) return
-                                    val endpoint = serviceInfo.toEndpoint() ?: return
+                                    val endpoint = serviceInfo.toEndpoint(trustedPi) ?: return
                                     resolved = true
                                     stopDiscovery()
                                     if (continuation.isActive) continuation.resume(endpoint)
@@ -510,7 +523,7 @@ class PiNetworkDataSourceImpl @Inject constructor(
                         }
                     }
 
-                    nsdManager.discoverServices(NSD_SERVICE_TYPE, NsdManager.PROTOCOL_DNS_SD, discoveryListener)
+                    nsdManager.discoverServices(trustedPi.serviceType, NsdManager.PROTOCOL_DNS_SD, discoveryListener)
                     continuation.invokeOnCancellation { stopDiscovery() }
                 }
             }
@@ -519,22 +532,21 @@ class PiNetworkDataSourceImpl @Inject constructor(
         }
     }
 
-    private fun NsdServiceInfo.toEndpoint(): PiServiceEndpoint? {
+    private fun NsdServiceInfo.toEndpoint(trustedPi: TrustedPiDevice): PiServiceEndpoint? {
         val attributes = attributes.mapValues { (_, value) -> value.decodeToString() }
         if (attributes["proto"] != "v1" || attributes["tls"] != "1") return null
-        val path = attributes["ws"] ?: "/ws"
+        val deviceId = attributes["device_id"] ?: serviceName ?: return null
+        if (deviceId != trustedPi.deviceId) return null
+        val path = attributes["ws"] ?: trustedPi.wsPath
+        if (path != trustedPi.wsPath) return null
         val hostAddress = host?.hostAddress ?: return null
         return PiServiceEndpoint(
-            serviceName = serviceName ?: "SleepCare Pi",
+            serviceName = trustedPi.displayName,
             host = hostAddress,
             port = port,
             wsPath = path,
-            deviceId = attributes["device_id"] ?: serviceName ?: "sleepcare-pi",
+            deviceId = deviceId,
         )
-    }
-
-    companion object {
-        private const val NSD_SERVICE_TYPE = "_sleepcare._tcp"
     }
 }
 
@@ -544,16 +556,18 @@ private fun JSONObject.optDoubleOrNull(key: String): Double? =
 private fun JSONObject.optIntOrNull(key: String): Int? =
     takeIf { has(key) && !isNull(key) }?.optInt(key)
 
-private fun resourceTrustManager(context: Context, @RawRes resourceId: Int): X509TrustManager {
-    val certificate = context.resources.openRawResource(resourceId).use { input ->
-        CertificateFactory.getInstance("X.509").generateCertificate(input)
+private class SpkiPinningTrustManager(
+    private val expectedSpkiSha256: String,
+) : X509TrustManager {
+    override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) = Unit
+
+    override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) {
+        val leaf = chain?.firstOrNull() ?: throw CertificateException("Server certificate is missing.")
+        val actual = PiPairingCodec.certificateSpkiSha256(leaf)
+        if (actual != expectedSpkiSha256) {
+            throw CertificateException("등록된 Pi 인증 정보와 다릅니다. QR로 다시 등록해 주세요.")
+        }
     }
-    val keyStore = KeyStore.getInstance(KeyStore.getDefaultType()).apply {
-        load(null, null)
-        setCertificateEntry("sleepcare-pi", certificate)
-    }
-    val trustManagerFactory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm()).apply {
-        init(keyStore)
-    }
-    return trustManagerFactory.trustManagers.filterIsInstance<X509TrustManager>().first()
+
+    override fun getAcceptedIssuers(): Array<X509Certificate> = emptyArray()
 }

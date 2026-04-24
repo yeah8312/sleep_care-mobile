@@ -73,9 +73,12 @@ interface RecommendationRepository {
 
 interface DeviceConnectionRepository {
     fun observeDevices(): Flow<List<ConnectedDeviceState>>
+    fun observeTrustedPi(): Flow<TrustedPiDevice?>
     suspend fun startScan()
     suspend fun retryConnection(deviceType: DeviceType)
     suspend fun disconnect(deviceType: DeviceType)
+    suspend fun registerPiFromQr(rawPayload: String): Result<TrustedPiDevice>
+    suspend fun forgetPi()
 }
 
 interface StudySessionRepository {

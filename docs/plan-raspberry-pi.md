@@ -17,6 +17,8 @@
 
 ## 모바일 연동 기준
 - 모바일 앱과의 통신은 로컬 네트워크(NSD + WSS) 기준으로 맞춘다.
+- 최초 Pi 등록은 QR payload로 진행하며, 앱은 QR에 포함된 SPKI SHA-256 fingerprint로 WSS 서버 인증서를 검증한다.
+- QR payload, SPKI 계산법, NSD TXT record 요구사항은 [pi-qr-pairing.md](./pi-qr-pairing.md)를 기준으로 한다.
 - 전송 데이터는 졸음 이벤트와 위험도 업데이트 중심으로 설계한다.
 - 연결이 끊겨도 기기 자체 경고는 지속할 수 있어야 한다.
 - 현재 모바일 앱 구현 범위는 `hello`, `session.open`, `risk.update`, `alert.fire`, `session.close`, `session.summary`, `ping/pong` 이다.
@@ -40,6 +42,14 @@
 6. NSD + WSS 기반 데이터 전송 구현
 7. 심박 입력 수신 구조 추가
 8. 실제 환경 테스트 후 모델 정교화
+
+## QR 등록 구현 체크리스트
+- Pi 시작 시 또는 설정 화면에서 `sleepcare-pair-v1` QR payload를 표시한다.
+- QR의 `device_id`는 NSD TXT record의 `device_id`와 반드시 같게 유지한다.
+- QR의 `ws`는 NSD TXT record의 `ws`와 반드시 같게 유지한다.
+- `spki_sha256`은 인증서 전체가 아니라 DER-encoded SubjectPublicKeyInfo bytes의 SHA-256 Base64 값으로 생성한다.
+- WSS 서버는 QR의 fingerprint를 만든 공개키와 같은 키쌍의 인증서를 제시한다.
+- 키쌍을 교체한 경우 앱에서 QR 재등록이 필요하다는 안내를 Pi UI에 표시한다.
 
 ## 고려 사항
 - 조명 변화 대응
