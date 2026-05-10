@@ -139,6 +139,7 @@ interface PiDebugRepository {
     suspend fun startEyeWithSyntheticHrSession()
     suspend fun sendSyntheticHeartRate()
     suspend fun stopTestSession()
+    suspend fun clearPacketLogs()
 }
 
 interface StudySessionRepository {

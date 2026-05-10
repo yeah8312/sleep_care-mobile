@@ -9,6 +9,7 @@ import com.sleepcare.mobile.BuildConfig
 import com.sleepcare.mobile.domain.PiAlertFire
 import com.sleepcare.mobile.domain.PiDebugEndpoint
 import com.sleepcare.mobile.domain.PiDebugNsdCandidate
+import com.sleepcare.mobile.domain.PiDebugPacketLogEntry
 import com.sleepcare.mobile.domain.PiDebugSessionMode
 import com.sleepcare.mobile.domain.PiEnvelope
 import com.sleepcare.mobile.domain.PiHelloAck
@@ -51,6 +52,7 @@ interface PiDebugClient {
     fun observeRiskUpdates(): Flow<PiRiskUpdate>
     fun observeAlerts(): Flow<PiAlertFire>
     fun observeSessionSummaries(): Flow<PiSessionSummary>
+    fun observePacketLogs(): Flow<PiDebugPacketLogEntry>
     suspend fun readServerSpki(endpoint: PiDebugEndpoint): String
     suspend fun discoverNsdCandidates(timeoutMs: Long = 8_000): List<PiDebugNsdCandidate>
     suspend fun connectDirect(endpoint: PiDebugEndpoint, expectedSpkiSha256: String): PiHelloAck
@@ -70,6 +72,7 @@ class PiDebugNetworkClient @Inject constructor(
     private val riskUpdates = MutableSharedFlow<PiRiskUpdate>(extraBufferCapacity = 16)
     private val alertEvents = MutableSharedFlow<PiAlertFire>(extraBufferCapacity = 16)
     private val sessionSummaries = MutableSharedFlow<PiSessionSummary>(extraBufferCapacity = 8)
+    private val packetLogs = MutableSharedFlow<PiDebugPacketLogEntry>(extraBufferCapacity = 80)
     private val sequence = AtomicLong(1L)
     private val openWaiters = ConcurrentHashMap<String, CompletableDeferred<Boolean>>()
     private val closeWaiters = ConcurrentHashMap<String, CompletableDeferred<PiSessionSummary?>>()
@@ -82,6 +85,8 @@ class PiDebugNetworkClient @Inject constructor(
     override fun observeAlerts(): Flow<PiAlertFire> = alertEvents.asSharedFlow()
 
     override fun observeSessionSummaries(): Flow<PiSessionSummary> = sessionSummaries.asSharedFlow()
+
+    override fun observePacketLogs(): Flow<PiDebugPacketLogEntry> = packetLogs.asSharedFlow()
 
     override suspend fun readServerSpki(endpoint: PiDebugEndpoint): String = withContext(Dispatchers.IO) {
         val parsed = endpoint.toParsedEndpoint()
@@ -387,6 +392,7 @@ class PiDebugNetworkClient @Inject constructor(
     private fun handleIncomingMessage(text: String) {
         val envelope = PiProtocolCodec.parseEnvelope(text)
         logPiIncomingPacket(text, envelope)
+        packetLogs.tryEmit(text.toPacketLogEntry(envelope))
         if (envelope == null) return
         when (envelope.type) {
             "hello_ack" -> {
@@ -517,3 +523,14 @@ private fun logPiIncomingPacket(raw: String, envelope: PiEnvelope?) {
         "recv type=${envelope.type} sid=${envelope.sessionId} seq=${envelope.sequence} ackRequired=${envelope.ackRequired}"
     )
 }
+
+private fun String.toPacketLogEntry(envelope: PiEnvelope?): PiDebugPacketLogEntry =
+    PiDebugPacketLogEntry(
+        receivedAt = LocalDateTime.now(),
+        rawJson = this,
+        parsedSuccessfully = envelope != null,
+        type = envelope?.type,
+        sessionId = envelope?.sessionId,
+        sequence = envelope?.sequence,
+        ackRequired = envelope?.ackRequired,
+    )

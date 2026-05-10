@@ -311,6 +311,13 @@ SleepCarePi: recv type=hello_ack sid=null seq=1 ackRequired=false
 
 `recv invalid raw=...`가 보이면 앱까지 패킷은 도착했지만 JSON envelope 형식이 맞지 않는 상태다.
 
+앱 안에서 확인할 때:
+
+- `설정`에서 `개발자 모드`를 켠다.
+- `기기 연결` 탭의 `Pi 개발 테스트` 카드로 이동한다.
+- `패킷 로그` 영역에서 최근 수신 패킷을 확인한다.
+- 이 인앱 로그는 Pi 개발 테스트 카드에서 받은 패킷만 보여준다. 실제 공부 세션의 운영 Pi 패킷까지 보려면 위의 `adb logcat -s SleepCarePi`를 사용한다.
+
 성공 기준:
 
 - 앱 카드에 `hello_ack 수신`이 표시된다.

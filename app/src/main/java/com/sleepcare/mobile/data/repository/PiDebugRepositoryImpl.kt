@@ -123,6 +123,14 @@ class PiDebugRepositoryImpl @Inject constructor(
                 debugState.update { current -> current.copy(lastSummary = summary.toDebugSummary()) }
             }
         }
+        scope.launch {
+            piDebugClient.observePacketLogs().collect { entry ->
+                debugState.update { current ->
+                    // 개발자 화면은 즉시 진단이 목적이므로 최신 패킷을 위에 두고 메모리에는 최근 80개만 유지합니다.
+                    current.copy(packetLogs = (listOf(entry) + current.packetLogs).take(MAX_PACKET_LOGS))
+                }
+            }
+        }
     }
 
     override fun observeDebugState(): Flow<PiDebugState> = debugState
@@ -235,6 +243,10 @@ class PiDebugRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun clearPacketLogs() {
+        debugState.update { current -> current.copy(packetLogs = emptyList()) }
+    }
+
     private suspend fun startSession(mode: PiDebugSessionMode) {
         runPiCommand(if (mode == PiDebugSessionMode.EyeOnly) "Eye-only 시작" else "Eye+Synthetic HR 시작") {
             connectForSelectedMode()
@@ -306,3 +318,5 @@ private fun PiAlertFire.toDebugSummary(): String =
 
 private fun PiSessionSummary.toDebugSummary(): String =
     "session.summary · state=$finalState · alerts=$totalAlerts · mode=${mode ?: "-"} · reason=${summaryReason ?: "-"}"
+
+private const val MAX_PACKET_LOGS = 80

@@ -5,6 +5,7 @@ import com.sleepcare.mobile.data.source.PiPairingCodec
 import com.sleepcare.mobile.domain.PiAlertFire
 import com.sleepcare.mobile.domain.PiDebugEndpoint
 import com.sleepcare.mobile.domain.PiDebugNsdCandidate
+import com.sleepcare.mobile.domain.PiDebugPacketLogEntry
 import com.sleepcare.mobile.domain.PiDebugSessionMode
 import com.sleepcare.mobile.domain.PiDebugState
 import com.sleepcare.mobile.domain.PiHelloAck
@@ -159,6 +160,38 @@ class PiDebugRepositoryTest {
         }
     }
 
+    @Test
+    fun `packet logs keep latest eighty entries in newest first order`() = runTest {
+        val fakeClient = FakePiDebugClient()
+        val repository = PiDebugRepositoryImpl(fakeClient, FakePiDebugTrustedPiStore())
+
+        repeat(85) { index ->
+            fakeClient.packetLogs.emit(packetLog(sequence = index.toLong()))
+        }
+
+        eventually {
+            val logs = repository.currentState().packetLogs
+            assertEquals(80, logs.size)
+            assertEquals(84L, logs.first().sequence)
+            assertEquals(5L, logs.last().sequence)
+        }
+    }
+
+    @Test
+    fun `clear packet logs empties in memory debug log`() = runTest {
+        val fakeClient = FakePiDebugClient()
+        val repository = PiDebugRepositoryImpl(fakeClient, FakePiDebugTrustedPiStore())
+
+        fakeClient.packetLogs.emit(packetLog(sequence = 1L))
+        eventually {
+            assertTrue(repository.currentState().packetLogs.isNotEmpty())
+        }
+
+        repository.clearPacketLogs()
+
+        assertTrue(repository.currentState().packetLogs.isEmpty())
+    }
+
     private fun risk(sessionId: String) = PiRiskUpdate(
         sessionId = sessionId,
         sequence = 1L,
@@ -169,6 +202,16 @@ class PiDebugRepositoryTest {
         state = "BASELINE",
         recommendedFlushSec = null,
         receivedAt = LocalDateTime.now(),
+    )
+
+    private fun packetLog(sequence: Long) = PiDebugPacketLogEntry(
+        receivedAt = LocalDateTime.now(),
+        rawJson = """{"v":1,"t":"risk.update","seq":$sequence}""",
+        parsedSuccessfully = true,
+        type = "risk.update",
+        sessionId = "pi-debug-test",
+        sequence = sequence,
+        ackRequired = false,
     )
 
     private fun validSpki(): String = Base64.getEncoder().encodeToString(ByteArray(32) { 7 })
@@ -208,6 +251,7 @@ private class FakePiDebugClient : PiDebugClient {
     val riskUpdates = MutableSharedFlow<PiRiskUpdate>(replay = 1)
     val alerts = MutableSharedFlow<PiAlertFire>(replay = 1)
     val summaries = MutableSharedFlow<PiSessionSummary>(replay = 1)
+    val packetLogs = MutableSharedFlow<PiDebugPacketLogEntry>(extraBufferCapacity = 100)
     var nsdCandidates = emptyList<PiDebugNsdCandidate>()
     val startedModes = mutableListOf<PiDebugSessionMode>()
     val startedSessionIds = mutableListOf<String>()
@@ -220,6 +264,8 @@ private class FakePiDebugClient : PiDebugClient {
     override fun observeAlerts(): Flow<PiAlertFire> = alerts
 
     override fun observeSessionSummaries(): Flow<PiSessionSummary> = summaries
+
+    override fun observePacketLogs(): Flow<PiDebugPacketLogEntry> = packetLogs
 
     override suspend fun readServerSpki(endpoint: PiDebugEndpoint): String = spki
 

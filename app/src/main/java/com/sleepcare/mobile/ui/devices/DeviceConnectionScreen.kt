@@ -37,6 +37,7 @@ import com.sleepcare.mobile.domain.DeviceConnectionRepository
 import com.sleepcare.mobile.domain.DeviceType
 import com.sleepcare.mobile.domain.PiDebugConnectionMode
 import com.sleepcare.mobile.domain.PiDebugEndpoint
+import com.sleepcare.mobile.domain.PiDebugPacketLogEntry
 import com.sleepcare.mobile.domain.PiDebugRepository
 import com.sleepcare.mobile.domain.PiDebugState
 import com.sleepcare.mobile.domain.SettingsRepository
@@ -161,6 +162,7 @@ fun DeviceConnectionScreen(
                     onStartEyeWithHr = viewModel::startPiDebugEyeWithSyntheticHrSession,
                     onSendHr = viewModel::sendPiDebugSyntheticHeartRate,
                     onStop = viewModel::stopPiDebugSession,
+                    onClearPacketLogs = viewModel::clearPiDebugPacketLogs,
                 )
             }
             item {
@@ -208,6 +210,7 @@ private fun PiDebugCard(
     onStartEyeWithHr: () -> Unit,
     onSendHr: () -> Unit,
     onStop: () -> Unit,
+    onClearPacketLogs: () -> Unit,
 ) {
     GlassCard {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -330,6 +333,34 @@ private fun PiDebugCard(
                                 candidate.error?.let { append("\n오류 $it") }
                             }
                         },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            Text("패킷 로그", style = MaterialTheme.typography.labelLarge)
+            Text(
+                "앱 안의 패킷 로그는 Pi 개발 테스트 연결에서 받은 패킷만 보여줍니다. 운영 공부 세션 패킷은 adb logcat -s SleepCarePi로 확인합니다.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedButton(
+                onClick = onClearPacketLogs,
+                modifier = Modifier.fillMaxWidth(),
+                enabled = state.packetLogs.isNotEmpty(),
+            ) {
+                Text("로그 지우기")
+            }
+            if (state.packetLogs.isEmpty()) {
+                Text(
+                    "아직 수신 패킷 없음",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                SelectionContainer {
+                    Text(
+                        state.packetLogs.joinToString("\n\n") { it.toUiText() },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -503,6 +534,10 @@ class DevicesViewModel @Inject constructor(
     fun stopPiDebugSession() {
         viewModelScope.launch { piDebugRepository.stopTestSession() }
     }
+
+    fun clearPiDebugPacketLogs() {
+        viewModelScope.launch { piDebugRepository.clearPacketLogs() }
+    }
 }
 
 // 도메인 연결 상태를 카드 컴포넌트가 이해하는 시각 상태로 변환합니다.
@@ -517,3 +552,16 @@ private fun PiDebugConnectionMode.toUiLabel(): String = when (this) {
     PiDebugConnectionMode.DirectEndpoint -> "직접 endpoint"
     PiDebugConnectionMode.RegisteredPiNsd -> "등록 Pi(NSD)"
 }
+
+private fun PiDebugPacketLogEntry.toUiText(): String =
+    buildString {
+        append(receivedAt.toDisplayDateTime())
+        append(" · ")
+        append(type ?: "invalid")
+        append(" · sid=${sessionId ?: "-"}")
+        append(" · seq=${sequence ?: "-"}")
+        append(" · ackRequired=${ackRequired ?: "-"}")
+        if (!parsedSuccessfully) append(" · parse failed")
+        append("\n")
+        append(rawJson)
+    }

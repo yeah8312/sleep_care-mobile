@@ -259,6 +259,18 @@ data class PiDebugNsdCandidate(
     val error: String? = null,
 )
 
+// Pi 개발 테스트에서 폰이 실제로 받은 WSS 패킷을 화면에 남기기 위한 메모리 전용 로그입니다.
+// 운영 공부 세션의 패킷은 logcat으로만 확인하고, 이 모델은 개발자 카드 안의 직접 테스트 흐름에만 사용합니다.
+data class PiDebugPacketLogEntry(
+    val receivedAt: LocalDateTime,
+    val rawJson: String,
+    val parsedSuccessfully: Boolean,
+    val type: String?,
+    val sessionId: String?,
+    val sequence: Long?,
+    val ackRequired: Boolean?,
+)
+
 // Pi 개발자 모드는 운영 공부 세션과 완전히 분리된 진단 상태입니다.
 // 여기의 sessionId는 Room에 저장하지 않고, 기존 Pi wire protocol을 실제로 보낼 때만 사용합니다.
 data class PiDebugState(
@@ -275,6 +287,7 @@ data class PiDebugState(
     val lastAlertSummary: String? = null,
     val lastSummary: String? = null,
     val lastError: String? = null,
+    val packetLogs: List<PiDebugPacketLogEntry> = emptyList(),
 )
 
 typealias WatchFlushPolicy = SharedWatchFlushPolicy
