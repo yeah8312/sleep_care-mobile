@@ -46,6 +46,8 @@ android {
     }
 
     buildFeatures {
+        // Pi 수신 패킷 로그처럼 debug/release에서 동작을 달리해야 하는 코드가 BuildConfig.DEBUG를 참조합니다.
+        buildConfig = true
         compose = true
     }
 

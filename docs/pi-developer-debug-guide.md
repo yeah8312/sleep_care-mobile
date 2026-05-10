@@ -296,6 +296,21 @@ Pi에서 확인할 로그:
 [sleepcare-pi] tx t=hello_ack device_id=deskpi-a1 proto=v1
 ```
 
+폰에서 확인할 logcat:
+
+```powershell
+adb logcat -s SleepCarePi
+```
+
+기대 출력:
+
+```text
+SleepCarePi: recv raw={"v":1,"t":"hello_ack",...}
+SleepCarePi: recv type=hello_ack sid=null seq=1 ackRequired=false
+```
+
+`recv invalid raw=...`가 보이면 앱까지 패킷은 도착했지만 JSON envelope 형식이 맞지 않는 상태다.
+
 성공 기준:
 
 - 앱 카드에 `hello_ack 수신`이 표시된다.

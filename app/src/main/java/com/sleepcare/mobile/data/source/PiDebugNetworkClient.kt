@@ -4,10 +4,13 @@ import android.content.Context
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
 import android.net.wifi.WifiManager
+import android.util.Log
+import com.sleepcare.mobile.BuildConfig
 import com.sleepcare.mobile.domain.PiAlertFire
 import com.sleepcare.mobile.domain.PiDebugEndpoint
 import com.sleepcare.mobile.domain.PiDebugNsdCandidate
 import com.sleepcare.mobile.domain.PiDebugSessionMode
+import com.sleepcare.mobile.domain.PiEnvelope
 import com.sleepcare.mobile.domain.PiHelloAck
 import com.sleepcare.mobile.domain.PiRiskUpdate
 import com.sleepcare.mobile.domain.PiSessionSummary
@@ -382,7 +385,9 @@ class PiDebugNetworkClient @Inject constructor(
     }
 
     private fun handleIncomingMessage(text: String) {
-        val envelope = PiProtocolCodec.parseEnvelope(text) ?: return
+        val envelope = PiProtocolCodec.parseEnvelope(text)
+        logPiIncomingPacket(text, envelope)
+        if (envelope == null) return
         when (envelope.type) {
             "hello_ack" -> {
                 PiProtocolCodec.parseHelloAck(envelope)?.let { ack ->
@@ -492,4 +497,23 @@ private fun LocalDateTime.toEpochMillis(): Long =
 
 private fun List<Int>.toJsonArray() = JSONArray().apply {
     forEach { put(it) }
+}
+
+private const val PI_LOG_TAG = "SleepCarePi"
+
+private fun logPiIncomingPacket(raw: String, envelope: PiEnvelope?) {
+    if (!BuildConfig.DEBUG) return
+
+    // Pi 개발자 모드는 운영 세션 저장 없이 프로토콜만 검증하므로,
+    // 수신 원문과 envelope 요약을 함께 남겨 Pi 구현자가 필드 불일치를 바로 볼 수 있게 합니다.
+    if (envelope == null) {
+        Log.d(PI_LOG_TAG, "recv invalid raw=$raw")
+        return
+    }
+
+    Log.d(PI_LOG_TAG, "recv raw=$raw")
+    Log.d(
+        PI_LOG_TAG,
+        "recv type=${envelope.type} sid=${envelope.sessionId} seq=${envelope.sequence} ackRequired=${envelope.ackRequired}"
+    )
 }

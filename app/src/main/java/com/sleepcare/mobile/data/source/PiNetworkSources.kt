@@ -4,6 +4,8 @@ import android.content.Context
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
 import android.net.wifi.WifiManager
+import android.util.Log
+import com.sleepcare.mobile.BuildConfig
 import com.sleepcare.mobile.data.local.PreferencesStore
 import com.sleepcare.mobile.domain.ConnectionStatus
 import com.sleepcare.mobile.domain.ConnectedDeviceState
@@ -451,7 +453,9 @@ class PiNetworkDataSourceImpl @Inject constructor(
     }
 
     private fun handleIncomingMessage(text: String, endpoint: PiServiceEndpoint) {
-        val envelope = PiProtocolCodec.parseEnvelope(text) ?: return
+        val envelope = PiProtocolCodec.parseEnvelope(text)
+        logPiIncomingPacket(text, envelope)
+        if (envelope == null) return
         connectionState.value = ConnectedDeviceState(
             deviceType = DeviceType.RaspberryPi,
             deviceName = endpoint.serviceName,
@@ -614,3 +618,22 @@ private fun JSONObject.optDoubleOrNull(key: String): Double? =
 
 private fun JSONObject.optIntOrNull(key: String): Int? =
     takeIf { has(key) && !isNull(key) }?.optInt(key)
+
+private const val PI_LOG_TAG = "SleepCarePi"
+
+private fun logPiIncomingPacket(raw: String, envelope: PiEnvelope?) {
+    if (!BuildConfig.DEBUG) return
+
+    // Pi 개발자가 앱 내부 상태를 열어 보지 않아도 WSS 수신 여부와 파싱 결과를 logcat에서 확인하도록 남깁니다.
+    // raw JSON에는 세션 정보가 포함될 수 있으므로 debug 빌드에서만 출력합니다.
+    if (envelope == null) {
+        Log.d(PI_LOG_TAG, "recv invalid raw=$raw")
+        return
+    }
+
+    Log.d(PI_LOG_TAG, "recv raw=$raw")
+    Log.d(
+        PI_LOG_TAG,
+        "recv type=${envelope.type} sid=${envelope.sessionId} seq=${envelope.sequence} ackRequired=${envelope.ackRequired}"
+    )
+}
