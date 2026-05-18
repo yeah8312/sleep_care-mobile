@@ -4,6 +4,8 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+val samsungHealthSensorSdkAar = layout.projectDirectory.file("libs/samsung-health-sensor-api.aar")
+
 // Wear OS 워치 앱 모듈입니다.
 // 휴대폰 명령을 받아 전면 서비스로 심박 추적을 수행하고 Data Layer로 샘플을 보냅니다.
 android {
@@ -50,13 +52,36 @@ android {
     }
 }
 
+val checkSamsungHealthSensorSdk by tasks.registering {
+    group = "verification"
+    description = "Verify that the local Samsung Health Sensor SDK AAR is available."
+
+    doLast {
+        if (!samsungHealthSensorSdkAar.asFile.exists()) {
+            error(
+                """
+                Samsung Health Sensor SDK AAR이 필요합니다.
+                Samsung Developer에서 SDK를 받은 뒤 다음 위치에 로컬로 배치하세요.
+                ${samsungHealthSensorSdkAar.asFile.absolutePath}
+
+                이 AAR은 라이선스/용량/로컬 설정 문제를 피하기 위해 Git에 커밋하지 않습니다.
+                """.trimIndent(),
+            )
+        }
+    }
+}
+
+tasks.named("preBuild") {
+    dependsOn(checkSamsungHealthSensorSdk)
+}
+
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2024.06.00")
 
     // 모바일 앱과 같은 워치 메시지 경로/모델/코덱을 사용합니다.
     implementation(project(":watch-contracts"))
-    // 실제 센서 SDK AAR을 libs 폴더에 넣으면 이 모듈에서 함께 패키징됩니다.
-    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar"))))
+    // Samsung Health Sensor SDK는 로컬 AAR로만 붙입니다. 없으면 위 preBuild 체크가 이유를 설명하고 중단합니다.
+    implementation(files(samsungHealthSensorSdkAar.asFile))
 
     implementation(composeBom)
     implementation("androidx.core:core-ktx:1.13.1")
@@ -73,6 +98,8 @@ dependencies {
     implementation("com.google.android.gms:play-services-wearable:19.0.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1")
+
+    testImplementation("junit:junit:4.13.2")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

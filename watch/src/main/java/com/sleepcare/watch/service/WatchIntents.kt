@@ -143,8 +143,14 @@ object WatchSessionIntents {
         ContextCompat.startForegroundService(context, intent)
     }
 
-    fun buildSessionReadyPayload(sessionId: String): ByteArray =
-        WatchProtocolCodec.encodeSessionReady(sessionId)
+    fun buildSessionReadyPayload(
+        sessionId: String,
+        sensorBackend: String = "placeholder",
+    ): ByteArray =
+        WatchProtocolCodec.encodeSessionReady(
+            sessionId = sessionId,
+            sensorBackend = sensorBackend,
+        )
 
     fun buildSessionErrorPayload(
         sessionId: String,

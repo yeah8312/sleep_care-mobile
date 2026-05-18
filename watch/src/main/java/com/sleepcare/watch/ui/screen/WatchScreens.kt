@@ -88,6 +88,13 @@ fun ActiveSessionScreen(
     onTriggerAlert: () -> Unit,
     onStopSession: () -> Unit,
 ) {
+    // 실제 SDK 세션에서는 첫 DataPoint가 도착하기 전까지 측정값과 대기 상태를 구분해 보여줍니다.
+    val heartRateLabel = state.latestHeartRate.takeIf { it > 0 }?.toString() ?: "--"
+    val ibiLabel = state.latestIbiMs
+        .takeIf { state.latestSample != null && it > 0 }
+        ?.let { "IBI: ${it}ms" }
+        ?: "IBI: waiting"
+
     ScreenContainer {
         Row(verticalAlignment = Alignment.CenterVertically) {
             StatusPill(text = "SENSOR", icon = Icons.Filled.Bluetooth, active = true)
@@ -105,7 +112,7 @@ fun ActiveSessionScreen(
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
-                    text = "${state.latestHeartRate}",
+                    text = heartRateLabel,
                     style = MaterialTheme.typography.display1,
                     color = MaterialTheme.colors.onSurface,
                     fontWeight = FontWeight.Bold,
@@ -128,7 +135,7 @@ fun ActiveSessionScreen(
                 Spacer(Modifier.height(4.dp))
                 Chip(
                     onClick = onTriggerAlert,
-                    label = { Text("IBI: ${state.latestIbiMs}ms") },
+                    label = { Text(ibiLabel) },
                     colors = ChipDefaults.secondaryChipColors(),
                 )
                 Spacer(Modifier.height(8.dp))

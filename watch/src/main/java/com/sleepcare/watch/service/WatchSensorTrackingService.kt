@@ -252,14 +252,22 @@ class WatchSensorTrackingService : Service() {
         trackingStarted = true
         WatchSessionStore.recordCommandHandled("backend start requested", config.sessionId)
         Log.d(TAG, "backend start requested sid=${config.sessionId}")
-        WatchSessionStore.startDemoSession(config.sessionId)
+        WatchSessionStore.startTrackingSession(config.sessionId)
         WatchSessionStore.updateFlushPolicy(config.flushPolicy)
 
-        val startResult = backend.start(config) { sample ->
-            serviceScope.launch {
-                onSample(sample)
-            }
-        }
+        val startResult = backend.start(
+            config = config,
+            onSample = { sample ->
+                serviceScope.launch {
+                    onSample(sample)
+                }
+            },
+            onRuntimeError = { error ->
+                serviceScope.launch {
+                    handleBackendRuntimeError(config.sessionId, error)
+                }
+            },
+        )
 
         // 센서 백엔드가 시작되지 못하면 즉시 휴대폰에 recoverable 오류를 알립니다.
         if (!startResult.started) {
@@ -271,6 +279,8 @@ class WatchSensorTrackingService : Service() {
                 message = startResult.message,
                 recoverable = true,
             )
+            currentConfig = null
+            trackingStarted = false
             WatchSessionStore.stopTracking(startResult.message)
             stopSelf()
             return
@@ -279,7 +289,10 @@ class WatchSensorTrackingService : Service() {
         WatchSessionStore.recordCommandHandled("backend started", config.sessionId)
         val readySent = messenger.send(
             WatchPaths.SessionReady,
-            WatchSessionIntents.buildSessionReadyPayload(config.sessionId),
+            WatchSessionIntents.buildSessionReadyPayload(
+                sessionId = config.sessionId,
+                sensorBackend = startResult.sensorBackend,
+            ),
         )
         if (readySent) {
             WatchSessionStore.recordCommandHandled("session.ready sent", config.sessionId)
@@ -287,6 +300,23 @@ class WatchSensorTrackingService : Service() {
             WatchSessionStore.recordCommandError("session.ready send failed", config.sessionId)
         }
         Log.d(TAG, "session.ready send result sid=${config.sessionId}, sent=$readySent")
+    }
+
+    private suspend fun handleBackendRuntimeError(
+        sessionId: String,
+        error: WatchBackendRuntimeError,
+    ) {
+        if (currentConfig?.sessionId != sessionId || !trackingStarted) return
+        WatchSessionStore.recordCommandError(error.code, sessionId, error.message)
+        Log.d(TAG, "backend runtime error sid=$sessionId, code=${error.code}, message=${error.message}")
+        // SDK가 시작 이후 끊긴 경우에도 모바일이 타임아웃으로 오해하지 않도록 기존 session.error 계약으로 회신합니다.
+        sendSessionError(
+            sessionId = sessionId,
+            code = error.code,
+            message = error.message,
+            recoverable = error.recoverable,
+        )
+        stopSessionInternal(reason = error.message, notifyPhone = false)
     }
 
     private suspend fun stopSessionInternal(

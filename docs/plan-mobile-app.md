@@ -65,6 +65,8 @@
 ### 워치 연동
 - Wear OS Data Layer
 - Galaxy Watch + Samsung Health Sensor SDK 조합을 기준으로 한다.
+- 워치 앱은 Samsung Health Sensor SDK `HEART_RATE_CONTINUOUS` tracker로 실제 심박/IBI를 읽고, `session.ready.sensor_backend=samsung-health-sensor-sdk`로 준비 완료를 알린다.
+- SDK AAR은 워치 모듈의 `watch/libs/samsung-health-sensor-api.aar`에 로컬로 배치하며 Git에 커밋하지 않는다.
 - Data Layer가 워치 앱 listener까지 메시지를 전달하려면 폰/워치 `applicationId`와 signing key가 모두 같아야 한다.
 - capability는 `sleepcare_watch_session_runtime`을 제공하는 워치 앱 노드를 고르는 필터이며, package/signature 정합성 조건을 대신하지 않는다.
 - 모바일 앱은 워치 연결 상태, ACK 커서, 백필 요청, `hr.ingest`, 진동 경고 요청을 지원하도록 확장한다.
@@ -72,6 +74,7 @@
 - 운영 공부 세션은 `sleepcare_watch_session_runtime` capability가 확인된 워치 앱 노드에만 명령을 보낸다.
 - 개발자 모드 워치 테스트는 capability를 먼저 사용하되, capability discovery 문제가 의심될 때 페어링된 Wear OS 노드로 직접 전송해 Data Layer 연결과 워치 앱 수신 여부를 분리 진단한다.
 - 폰의 전송 성공은 워치 앱 수신 확인이 아니므로, 워치 앱 설정 화면의 `Message Log`와 `adb logcat -s SleepCareWatch`로 listener 수신/서비스 처리/ready 회신 단계를 함께 확인한다.
+- 워치 센서 시작 실패는 권한, Health Platform 설치/버전, SDK policy, tracker 미지원 원인을 `session.error`로 회신한다.
 - 2026-05-06 실기기 테스트에서는 capability가 확인된 상태에서도 manifest listener 로그가 없었고, 워치 앱을 연 상태의 live listener에서는 전체 테스트 명령이 성공했다. 따라서 현재 운영 리스크는 Data Layer 계약보다 백그라운드 listener wake-up 안정성에 있다.
 - 기존 워치 debug 패키지 `com.sleepcare.watch`가 남아 있으면 테스트 대상이 헷갈릴 수 있으므로 새 APK 설치 전 `adb -s <watch> uninstall com.sleepcare.watch`로 제거한다.
 

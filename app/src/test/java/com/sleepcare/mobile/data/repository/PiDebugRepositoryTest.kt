@@ -251,7 +251,9 @@ private class FakePiDebugClient : PiDebugClient {
     val riskUpdates = MutableSharedFlow<PiRiskUpdate>(replay = 1)
     val alerts = MutableSharedFlow<PiAlertFire>(replay = 1)
     val summaries = MutableSharedFlow<PiSessionSummary>(replay = 1)
-    val packetLogs = MutableSharedFlow<PiDebugPacketLogEntry>(extraBufferCapacity = 100)
+    // Repository는 생성 직후 IO scope에서 packet log Flow를 수집하므로, 테스트 emit이 collector 시작보다 빠르면 유실될 수 있습니다.
+    // replay를 둬서 테스트가 실제 UI 메모리 로그 로직이 아니라 코루틴 스케줄링 운에 흔들리지 않게 합니다.
+    val packetLogs = MutableSharedFlow<PiDebugPacketLogEntry>(replay = 100)
     var nsdCandidates = emptyList<PiDebugNsdCandidate>()
     val startedModes = mutableListOf<PiDebugSessionMode>()
     val startedSessionIds = mutableListOf<String>()

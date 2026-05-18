@@ -17,7 +17,7 @@
 - 수면 분석 화면을 Stitch 산출물 방향으로 재구성하고, `최근 7일 수면 점수`, `주간 수면 리듬`, `최근 수면 구조` 카드 반영
 - 주간 수면 집계는 `기상한 날짜` 기준 `대표 수면 1개 + 추가 수면` 구조와 `3시간 이하 공백 병합`을 사용
 - 홈 화면의 `어제 수면 상태` 카드도 같은 집계 규칙을 따르도록 수정
-- 워치 앱은 companion 스캐폴드와 세션 중계 구조까지 구현되었고, 실제 Samsung 센서 backend 연결은 남아 있음
+- 워치 앱은 companion 세션 중계와 Samsung Health Sensor SDK 기반 실제 심박 backend를 구현했으며, 로컬 SDK AAR과 실기기 policy 검증이 필요함
 - 규칙 기반 추천 엔진 추가
 - 수면/추천 계산식 문서 추가: [docs/sleep-metrics.md](./docs/sleep-metrics.md)
 - 단위 테스트 추가
@@ -71,6 +71,7 @@
 - JDK 17
 - Android SDK
 - `local.properties`에 SDK 경로 설정
+- 워치 모듈 빌드 시 `watch/libs/samsung-health-sensor-api.aar` 로컬 배치 필요
 
 현재 저장소의 `local.properties` 예시:
 
@@ -91,7 +92,7 @@ sdk.dir=/path/to/Android/Sdk
 ./gradlew clean testDebugUnitTest
 ```
 
-현재 기준으로 `testDebugUnitTest`는 성공했습니다.
+워치 모듈까지 포함한 `testDebugUnitTest`는 Samsung Health Sensor SDK AAR을 로컬에 배치한 뒤 실행해야 합니다.
 
 Codex 샌드박스처럼 홈 디렉터리 쓰기 제약이 있는 환경에서는 Kotlin daemon이 fallback 컴파일로 동작할 수 있습니다. 그런 경우 아래처럼 `GRADLE_OPTS`를 함께 주는 편이 안전했습니다.
 
@@ -118,7 +119,7 @@ GRADLE_OPTS='-Duser.home=/tmp' ./gradlew clean testDebugUnitTest
 - Android Gradle Plugin 버전과 로컬 SDK 설치 상태가 어긋나면 Build Tools 관련 경고가 출력될 수 있음
 - 샌드박스 환경에서는 Kotlin daemon 임시 파일 경로 문제로 fallback 컴파일이 발생할 수 있음
 - 모바일 앱은 Pi와의 `NSD + WSS` 연결을 구현했지만, 실제 Pi 펌웨어/서버와의 통합 검증은 같은 로컬 Wi-Fi 환경에서 계속 확인이 필요함
-- 워치 앱은 companion 구조와 `hr.ingest` 중계까지 반영됐지만, Samsung Health Sensor SDK 실센서 backend 연결은 아직 남아 있음
+- 워치 앱은 Samsung Health Sensor SDK 실센서 backend를 사용하므로, AAR 미배치 또는 SDK policy/package/signing 불일치 시 워치 빌드나 센서 시작이 실패할 수 있음
 - Gradle Kotlin DSL 캐시가 깨진 환경에서는 로컬 빌드가 캐시 오류로 중단될 수 있음
 - Health Connect 원본 앱마다 sleep stage 밀도가 달라 `잠들기 지연`은 신뢰도 문제가 있어 현재 분석 UI에서 제외했다
 
@@ -128,7 +129,7 @@ GRADLE_OPTS='-Duser.home=/tmp' ./gradlew clean testDebugUnitTest
 - 로컬 Wi-Fi에서 `_sleepcare._tcp` NSD 탐색
 - `WSS` 연결
 - `hello`, `session.open`, `risk.update`, `alert.fire`, `session.close`, `session.summary` 처리
-- 모바일 앱 ↔ 워치 앱: companion 세션/큐/커서/진동 경고 구조 구현, 실센서 backend 일부 미구현
+- 모바일 앱 ↔ 워치 앱: companion 세션/큐/커서/진동 경고 구조와 Samsung Health Sensor SDK 실센서 backend 구현
 - 수면 데이터: Health Connect 기반 실제 연동 구현
 - 분석 화면: 최근 7일 수면 점수, 취침/기상 시각 일관성 기반 규칙성, 주간 수면 리듬 표시
 - 홈 화면: `어제 수면 상태` 카드가 분할 밤잠 병합과 추가 수면 합산 규칙을 반영

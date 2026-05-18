@@ -109,7 +109,8 @@
 - Wear OS Data Layer 기반 전달
 - 진동 보조 경고
 - 수면 데이터 연동 경로 검증
-- 현재는 UI/서비스/프로토콜 스캐폴드 구현 완료, 실제 Samsung 센서 백엔드 연결 대기
+- UI/서비스/프로토콜 스캐폴드와 Samsung Health Sensor SDK 실제 심박 backend 구현
+- 로컬 SDK AAR 배치와 Samsung SDK policy/signing 검증 필요
 
 ## 6. 데이터 및 추천 계획
 

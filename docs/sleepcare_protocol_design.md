@@ -15,7 +15,7 @@
 - 워치 앱 ↔ 모바일 앱: 모바일 쪽 구조 반영 중
   - 1차 대상은 `Galaxy Watch + Samsung Health Sensor SDK`
   - Wear OS Data Layer 기반 메시지 송수신, ACK 커서, 백필 요청, `session.ready / error / closed`, `hr.ingest` 중계 구조를 모바일 앱에 반영했다
-  - 워치 앱은 companion 스캐폴드와 foreground tracking service를 구현했고, 실제 Samsung 센서 백엔드는 AAR 연결 단계가 남아 있다
+  - 워치 앱은 foreground tracking service에서 Samsung Health Sensor SDK `HEART_RATE_CONTINUOUS` tracker를 사용해 실제 심박/IBI 샘플을 읽는다
 - 현재 세션 모드: 모바일 앱 기준 `watch + eye` handshake 구조 반영
 - 수면 데이터 연동: 모바일 앱에서 Health Connect 기반으로 구현
 
@@ -144,6 +144,12 @@ flowchart LR
 - 워치 모듈의 Kotlin `namespace`는 `com.sleepcare.watch`로 유지한다. 이는 코드 패키지/R 경로를 보존하기 위한 빌드 네임스페이스이며 Data Layer 전달 보안 조건과는 별도다.
 - `sleepcare_watch_session_runtime` capability는 메시지를 받을 수 있는 워치 앱 노드를 고르는 필터일 뿐, package/signature 불일치를 우회하지 않는다.
 
+#### Samsung Health Sensor SDK 조건
+- 워치 모듈은 `watch/libs/samsung-health-sensor-api.aar` 로컬 AAR을 필요로 하며, 이 파일은 Git에 커밋하지 않는다.
+- 센서 시작 성공 시 워치는 `session.ready` body의 `sensor_backend`를 `samsung-health-sensor-sdk`로 보낸다.
+- `DataPoint`의 `ValueKey.HeartRateSet.HEART_RATE`, `HEART_RATE_STATUS`, `IBI_LIST`, `IBI_STATUS_LIST`를 공통 `WatchHeartRateSample`의 `bpm`, `hr_status`, `ibi_ms`, `ibi_status`로 옮긴다.
+- 권한 부족, Health Platform 설치/버전 문제, SDK policy 오류, `HEART_RATE_CONTINUOUS` 미지원은 `session.error`로 모바일에 전달한다.
+
 ### 6.2 폰 ↔ 라즈베리파이
 
 #### 채택 기술
@@ -169,6 +175,8 @@ flowchart LR
 | SUSPECT | 5초 | 안구 위험도 상승 시 |
 | ALERT_NEAR | 2초 | 경고 직전 고정밀 모드 |
 | RECOVERY | 15초 | 안정화 후 복귀 |
+
+현재 워치 구현은 모바일이 전달한 `WatchFlushPolicy.suspectSec`를 활성 SDK `flush()` 주기로 사용한다. Pi 위험도에 따라 모바일이 추천 flush 값을 이 필드에 반영하므로, 워치가 Pi 위험 상태를 직접 몰라도 수집 freshness를 조정할 수 있다.
 
 ### 7.2 설계 의도
 
@@ -286,7 +294,8 @@ pong
 
 - 구현됨: `hello`, `hello_ack`, `session.open`, `session.ack`, `risk.update`, `alert.fire`, `session.close`, `session.summary`, `ping`, `pong`
 - 모바일 앱 구현됨: `hr.ingest`, 워치 ACK 커서, 백필 요청, 워치 진동 요청, `session.ready / error / close`
-- 미구현: `alert.clear`, 일반 `ack`, Samsung Health Sensor SDK 실센서 backend
+- 워치 앱 구현됨: Samsung Health Sensor SDK 기반 `HEART_RATE_CONTINUOUS` 심박/IBI 수집, 10분 버퍼, live/backfill 전송
+- 미구현: `alert.clear`, 일반 `ack`
 - 모바일 앱은 홈 공부 시작 카드에서 사용자가 선택한 세션 모드에 따라 `session.open` 필드를 채운다.
   `워치 포함` 모드는 `watch_available=true`, `eye_only=false` 로 심박 보조 신호를 함께 사용하고,
   `Eye only` 모드는 `watch_available=false`, `eye_only=true` 로 워치 준비 없이 Pi 카메라 세션만 연다.
@@ -545,7 +554,7 @@ device_id=deskpi-a1
 
 ## 15. 실제 메시지 흐름도
 
-모바일 앱은 현재 `15.1`의 워치 경로를 반영했고, 워치 앱도 companion 스캐폴드 기준의 `session.ready / error / close` 응답 경로를 포함한다. 설정의 개발자 모드를 켜면 Pi 공부 세션 없이 폰 ↔ 워치 Data Layer만 따로 테스트할 수 있다. 다만 실제 센서 수집은 Samsung Health Sensor SDK AAR 연결 이후 실기기 검증이 필요하다.
+모바일 앱은 현재 `15.1`의 워치 경로를 반영했고, 워치 앱도 Samsung Health Sensor SDK 기반 `session.ready / error / close` 응답 경로를 포함한다. 설정의 개발자 모드를 켜면 Pi 공부 세션 없이 폰 ↔ 워치 Data Layer만 따로 테스트할 수 있다. 실제 센서 수집 검증에는 로컬 SDK AAR, Samsung SDK policy, 실기기 권한 승인이 모두 필요하다.
 
 ### 15.1 정상 시나리오
 

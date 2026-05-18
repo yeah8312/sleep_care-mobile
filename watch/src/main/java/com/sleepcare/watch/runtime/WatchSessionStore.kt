@@ -52,6 +52,25 @@ object WatchSessionStore {
         }
     }
 
+    fun startTrackingSession(sessionId: String) {
+        _state.update {
+            // 실제 SDK 세션은 첫 샘플이 오기 전까지 가짜 심박값을 보여주지 않습니다.
+            // 연결 성공과 센서값 수신을 UI에서 구분할 수 있어 현장 디버깅이 쉬워집니다.
+            it.copy(
+                screen = WatchScreen.ActiveSession,
+                sessionId = sessionId,
+                connectionTitle = "Ready to Sync",
+                connectionSubtitle = "Foreground tracking is active",
+                connectionBadge = "Sensor",
+                trackingStatus = "Foreground tracking active",
+                lastSyncLabel = "Waiting for first sample",
+                latestHeartRate = 0,
+                latestIbiMs = 0,
+                latestSample = null,
+            )
+        }
+    }
+
     fun restorePrimaryScreen() {
         _state.update {
             it.copy(

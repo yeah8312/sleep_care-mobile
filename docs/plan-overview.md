@@ -6,7 +6,7 @@
 ## 현재 구현 상태
 - 모바일 앱과 라즈베리파이 사이의 로컬 네트워크 `NSD + WSS` 연동은 구현되었다.
 - 모바일 앱은 공부 세션 시작/종료, 세션 타이머, Pi 위험 상태/알림 반영, 로컬 저장을 수행한다.
-- 워치 앱은 companion 스캐폴드와 `hr.ingest` 중계 구조까지 반영되었고, 실제 Samsung 센서 backend 연결이 남아 있다.
+- 워치 앱은 companion 구조, `hr.ingest` 중계, Samsung Health Sensor SDK 실제 심박 backend까지 반영되었고, 로컬 SDK AAR과 실기기 policy 검증이 필요하다.
 - 실제 수면 데이터는 Health Connect 기반으로 연결되었고, 홈/분석/설정 화면에서 상태를 분기한다.
 - 수면 분석은 최근 7일 수면 점수, 취침/기상 시각 일관성 기반 규칙성, 주간 수면 리듬을 표시한다.
 
