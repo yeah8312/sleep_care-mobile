@@ -144,6 +144,9 @@ fabric.properties
 sleepcare_pi_dev_cert.pem
 sleepcare_pi_dev_key.pem
 
+# Samsung Health Sensor SDK AAR은 약관이 걸린 로컬 SDK 파일이라 저장소에 올리지 않습니다.
+watch/libs/*.aar
+
 # Android Studio의 실행 대상/기기 선택 상태는 개인 장비 serial을 포함할 수 있습니다.
 .idea/deploymentTargetSelector.xml
 .idea/deviceManager.xml
