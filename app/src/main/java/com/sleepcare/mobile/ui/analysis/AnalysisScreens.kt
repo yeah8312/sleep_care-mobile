@@ -127,11 +127,7 @@ fun AnalysisHubScreen(
         item {
             InsightCallout(
                 title = "한눈에 보는 인사이트",
-                message = if (uiState.sleepAvailable) {
-                    "최근 수면 시간이 조금 짧고 오후 2시대 졸음이 반복됩니다. 취침 시각을 앞당기면 개선 가능성이 큽니다."
-                } else {
-                    uiState.sleepEmptyReason
-                },
+                message = buildAnalysisInsight(uiState),
             )
         }
     }
@@ -250,7 +246,7 @@ fun DrowsinessAnalysisDetailScreen(
         item {
             InsightCallout(
                 title = "주의가 필요한 시간",
-                message = "오후 ${uiState.drowsiness.peakWindowLabel} 구간에 경고가 반복됩니다. 이 시간대에 복습 강도를 낮추거나 짧은 휴식을 넣어 보세요.",
+                message = buildDrowsinessDetailInsight(uiState.drowsiness),
             )
         }
         items(uiState.drowsiness.recentEvents) { event ->
@@ -721,6 +717,30 @@ private fun buildSleepRoutineInsight(
     }
     return latestSleep?.let { "$base 최근 세션은 ${formatSessionWindow(it)}에 기록됐습니다." } ?: base
 }
+
+// 분석 허브는 데이터가 없을 때 가정 문구를 만들지 않고, 현재 연결/수집 상태를 그대로 설명합니다.
+internal fun buildAnalysisInsight(uiState: AnalysisUiState): String {
+    val hasSleep = uiState.sleepAvailable
+    val hasDrowsiness = uiState.drowsiness.totalCount > 0
+    return when {
+        !hasSleep && !hasDrowsiness ->
+            "${uiState.sleepEmptyReason} Pi 졸음 이벤트도 아직 없어 통합 인사이트는 대기 중입니다."
+        !hasSleep ->
+            "${uiState.sleepEmptyReason} 현재는 Pi 졸음 이벤트 ${uiState.drowsiness.totalCount}건만 기준으로 확인할 수 있습니다."
+        !hasDrowsiness ->
+            "최근 수면 데이터는 불러왔지만 Pi 졸음 이벤트가 아직 없어 졸음 패턴은 계산하지 않았습니다."
+        else ->
+            "평균 수면 ${uiState.sleep.averageMinutes.toDurationText()}, 피크 ${uiState.drowsiness.peakWindowLabel}, 포커스 점수 ${uiState.drowsiness.focusScore}점을 함께 봅니다."
+    }
+}
+
+// 졸음 이벤트가 없으면 주의 시간대를 추정하지 않습니다. alert.fire가 들어온 뒤에만 피크 구간을 안내합니다.
+internal fun buildDrowsinessDetailInsight(drowsiness: DrowsinessAnalysisSnapshot): String =
+    if (drowsiness.totalCount == 0) {
+        "아직 Pi 졸음 이벤트가 없어 주의 시간대를 계산하지 않았습니다. 공부 세션 중 alert.fire가 들어오면 이곳에 피크 구간이 표시됩니다."
+    } else {
+        "${drowsiness.peakWindowLabel} 구간에 졸음 이벤트가 가장 많이 기록됐습니다. 이 시간대에는 복습 강도를 낮추거나 짧은 휴식을 먼저 배치해 보세요."
+    }
 
 private fun formatSessionWindow(session: SleepSession): String =
     "${formatClock(session.startTime)} - ${formatClock(session.endTime)}"

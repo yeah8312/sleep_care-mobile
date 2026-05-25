@@ -1,0 +1,32 @@
+# 핵심 런타임 경계만 그래프로 보기 위해 루트의 잡파일은 기본 제외합니다.
+*
+
+# 모바일 앱, 워치 앱, 공유 워치 계약은 한 그래프에서 봐야 호출/프로토콜 흐름이 이어집니다.
+!app/
+!app/**
+!watch/
+!watch/**
+!watch-contracts/
+!watch-contracts/**
+
+# Gradle/Android 로컬 산출물은 외부 의존성, 캐시, generated 코드가 섞여 핵심 그래프를 흐립니다.
+.gradle/
+.gradle-user-home/
+.android/
+.kotlin/
+.idea/
+build/
+**/build/
+**/bin/
+
+# 런타임 구조를 먼저 보기 위해 테스트 코드는 별도 패스로 분리합니다.
+**/src/test/
+**/src/androidTest/
+
+# 디자인 산출물은 구현 참고용이라 코드 구조 그래프에서는 제외합니다.
+stitch_exports/
+
+# graphify 산출물을 다시 입력으로 읽지 않게 막습니다.
+graphify-out/
+graphify-clean-out/
+**/graphify-out/

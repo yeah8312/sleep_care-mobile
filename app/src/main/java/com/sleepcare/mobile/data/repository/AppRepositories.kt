@@ -1185,7 +1185,7 @@ fun buildDrowsinessAnalysisSnapshot(
     val peakHour = grouped.maxByOrNull { (_, value) -> value.size }?.key
     val averageSleepMinutes = sessions.map { it.totalMinutes.toDouble() }.averageOrNull()?.toInt() ?: 390
     return DrowsinessAnalysisSnapshot(
-        totalCount = recent.size,
+        totalCount = events.size,
         peakWindowLabel = peakHour?.let { "%02d:00 - %02d:59".format(it, it) } ?: "실시간 연결 대기",
         focusScore = ScoreCalculator.focusScore(recent, averageSleepMinutes),
         recentEvents = recent,

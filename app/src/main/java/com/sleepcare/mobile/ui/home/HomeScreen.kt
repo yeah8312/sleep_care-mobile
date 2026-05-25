@@ -43,7 +43,9 @@ import com.sleepcare.mobile.ui.components.toDisplayDate
 import com.sleepcare.mobile.ui.components.toDisplayDateTime
 import com.sleepcare.mobile.ui.components.toDisplayTime
 import com.sleepcare.mobile.ui.components.toDurationText
+import com.sleepcare.mobile.ui.theme.SleepCareError
 import com.sleepcare.mobile.ui.theme.SleepCarePrimary
+import com.sleepcare.mobile.ui.theme.SleepCareSurfaceContainerHigh
 import com.sleepcare.mobile.ui.theme.SleepCareTertiary
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.time.Duration
@@ -60,6 +62,7 @@ import kotlinx.coroutines.launch
 data class HomeUiState(
     val snapshot: HomeDashboardSnapshot = HomeDashboardSnapshot(null, 0, null, null),
     val timelineSegments: List<TimelineSegment> = emptyList(),
+    val fatigueInsightText: String = "Pi 졸음 이벤트가 들어오면 최근 24시간의 집중 저하 신호를 요약합니다.",
     val studySession: StudySessionUiState = StudySessionUiState(),
     val sleepAvailable: Boolean = false,
     val sleepEmptyReason: String = "Health Connect 수면 데이터가 아직 없습니다.",
@@ -162,13 +165,12 @@ fun HomeScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("공부 피로 타임라인", style = MaterialTheme.typography.titleLarge)
                     Text(
-                        "최근 졸음 이벤트를 바탕으로 집중 저하 구간을 요약합니다.",
+                        uiState.fatigueInsightText,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     TimelineBar(
                         segments = uiState.timelineSegments,
-                        labels = listOf("08:00", "12:00", "16:00", "20:00"),
                     )
                 }
             }
@@ -216,6 +218,7 @@ class HomeViewModel @Inject constructor(
         val sleepAvailable = latestSleep != null
         // 최근 24시간 졸음 횟수만 홈 카드에 노출합니다.
         val recentDrowsinessCount = drowsiness.count { it.timestamp.isAfter(LocalDateTime.now().minusHours(24)) }
+        val fatigueTimeline = buildHomeFatigueTimeline(recentDrowsinessCount)
         HomeUiState(
             snapshot = HomeDashboardSnapshot(
                 latestSleep = latestSleep,
@@ -231,13 +234,8 @@ class HomeViewModel @Inject constructor(
             } else {
                 "Health Connect 수면 데이터가 아직 없습니다. 권한, 가용성, 또는 실제 기록 여부를 확인해 주세요."
             },
-            timelineSegments = listOf(
-                TimelineSegment("안정 집중", 0.32f, SleepCarePrimary.copy(alpha = 0.22f), "오전 집중 구간"),
-                TimelineSegment("졸음 경고", 0.08f + (recentDrowsinessCount.coerceAtMost(3) * 0.01f), Color(0xFFFFB4AB), "오후 피로"),
-                TimelineSegment("회복 집중", 0.18f, SleepCarePrimary.copy(alpha = 0.18f), "짧은 회복"),
-                TimelineSegment("저녁 저하", 0.10f, Color(0xFFFFDAD6), "저녁 복습"),
-                TimelineSegment("마무리", 0.32f, SleepCarePrimary.copy(alpha = 0.16f), "취침 전"),
-            ),
+            timelineSegments = fatigueTimeline.segments,
+            fatigueInsightText = fatigueTimeline.message,
         )
     }
 
@@ -360,6 +358,40 @@ private fun Long.toTimerText(): String {
         "%02d:%02d:%02d".format(hours, minutes, seconds)
     } else {
         "%02d:%02d".format(minutes, seconds)
+    }
+}
+
+internal data class HomeFatigueTimeline(
+    val message: String,
+    val segments: List<TimelineSegment>,
+)
+
+// 실제 Pi 이벤트가 없는 날에는 예시 하루 패턴을 만들지 않고, 수신 대기 상태를 그대로 보여줍니다.
+internal fun buildHomeFatigueTimeline(recentDrowsinessCount: Int): HomeFatigueTimeline {
+    val count = recentDrowsinessCount.coerceAtLeast(0)
+    return when {
+        count == 0 -> HomeFatigueTimeline(
+            message = "최근 24시간 동안 기록된 Pi 졸음 이벤트가 없습니다. 세션을 시작하면 감지 결과가 여기에 쌓입니다.",
+            segments = listOf(
+                TimelineSegment("기록 대기", 1f, SleepCareSurfaceContainerHigh, "최근 24시간 이벤트 없음"),
+            ),
+        )
+        count < 3 -> HomeFatigueTimeline(
+            message = "최근 24시간 동안 Pi 졸음 이벤트가 ${count}회 기록됐습니다. 반복 패턴을 단정하기에는 아직 표본이 적습니다.",
+            segments = listOf(
+                TimelineSegment("기본 관찰", 0.72f, SleepCarePrimary.copy(alpha = 0.20f), "일반 학습 구간"),
+                TimelineSegment("졸음 기록", 0.18f, SleepCareError.copy(alpha = 0.82f), "${count}회"),
+                TimelineSegment("회복 여유", 0.10f, SleepCareTertiary.copy(alpha = 0.24f), "짧은 휴식 권장"),
+            ),
+        )
+        else -> HomeFatigueTimeline(
+            message = "최근 24시간 동안 Pi 졸음 이벤트가 ${count}회 반복됐습니다. 같은 시간대 반복 여부는 분석 탭에서 확인하세요.",
+            segments = listOf(
+                TimelineSegment("기본 관찰", 0.56f, SleepCarePrimary.copy(alpha = 0.18f), "일반 학습 구간"),
+                TimelineSegment("반복 졸음", 0.28f, SleepCareError, "${count}회"),
+                TimelineSegment("휴식 우선", 0.16f, SleepCareTertiary.copy(alpha = 0.34f), "강도 조절 필요"),
+            ),
+        )
     }
 }
 
