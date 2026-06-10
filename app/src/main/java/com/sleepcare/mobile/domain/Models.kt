@@ -108,7 +108,55 @@ data class RecommendationTip(
     val iconKey: String,
 )
 
+// 추천 결과가 충분한 개인 기준으로 계산됐는지 UI가 구분할 수 있게 둡니다.
+enum class RecommendationStatus {
+    Ready,
+    LowConfidence,
+    NeedsSetup,
+}
+
+enum class RecommendationFactorType {
+    SleepDuration,
+    SleepConsistency,
+    DrowsinessPattern,
+    AcademicSchedule,
+    StudyPlan,
+    UserGoal,
+}
+
+enum class RecommendationFactorSeverity {
+    Good,
+    Watch,
+    NeedsAction,
+    Unknown,
+}
+
+// 추천 근거는 화면에서 "왜 이 시간이 나왔는지"를 설명하는 최소 단위입니다.
+data class RecommendationFactor(
+    val type: RecommendationFactorType,
+    val title: String,
+    val value: String,
+    val description: String,
+    val severity: RecommendationFactorSeverity,
+)
+
+enum class RecommendationActionBlockType {
+    SleepPrep,
+    FocusStudy,
+    Recovery,
+    ExamPrep,
+}
+
+// 실제 하루 루틴에 배치할 행동 블록입니다. 추천 시간과 팁 사이의 간격을 메웁니다.
+data class RecommendationActionBlock(
+    val type: RecommendationActionBlockType,
+    val title: String,
+    val timeLabel: String,
+    val description: String,
+)
+
 // 오늘의 권장 취침/기상 시간과 그 이유를 한 번 계산한 결과입니다.
+// status/factors/actionBlocks는 데이터 부족 상태와 판단 근거를 UI가 정직하게 보여주기 위해 둡니다.
 data class RecommendationSnapshot(
     val id: Long = 1L,
     val recommendedBedtime: LocalTime,
@@ -116,6 +164,9 @@ data class RecommendationSnapshot(
     val targetSleepMinutes: Int,
     val reason: String,
     val routineShiftMinutes: Int,
+    val status: RecommendationStatus = RecommendationStatus.Ready,
+    val factors: List<RecommendationFactor> = emptyList(),
+    val actionBlocks: List<RecommendationActionBlock> = emptyList(),
     val tips: List<RecommendationTip>,
     val generatedAt: LocalDateTime,
 )

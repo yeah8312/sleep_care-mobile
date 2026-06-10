@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Room
 import com.sleepcare.mobile.data.local.DrowsinessEventDao
 import com.sleepcare.mobile.data.local.ExamScheduleDao
+import com.sleepcare.mobile.data.local.MIGRATION_3_4
 import com.sleepcare.mobile.data.local.PreferencesStore
 import com.sleepcare.mobile.data.local.RecommendationSnapshotDao
 import com.sleepcare.mobile.data.local.SleepCareDatabase
@@ -61,6 +62,7 @@ object AppProvidesModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): SleepCareDatabase =
         Room.databaseBuilder(context, SleepCareDatabase::class.java, "sleep-care.db")
+            .addMigrations(MIGRATION_3_4)
             .fallbackToDestructiveMigration()
             .build()
 

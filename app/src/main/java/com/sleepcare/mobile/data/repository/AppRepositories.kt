@@ -27,10 +27,16 @@ import com.sleepcare.mobile.domain.PiAlertFire
 import com.sleepcare.mobile.domain.PiNetworkDataSource
 import com.sleepcare.mobile.domain.PiRiskUpdate
 import com.sleepcare.mobile.domain.PiSessionSummary
+import com.sleepcare.mobile.domain.RecommendationActionBlock
+import com.sleepcare.mobile.domain.RecommendationActionBlockType
 import com.sleepcare.mobile.domain.RecommendationEngine
+import com.sleepcare.mobile.domain.RecommendationFactor
+import com.sleepcare.mobile.domain.RecommendationFactorSeverity
+import com.sleepcare.mobile.domain.RecommendationFactorType
 import com.sleepcare.mobile.domain.RecommendationInput
 import com.sleepcare.mobile.domain.RecommendationRepository
 import com.sleepcare.mobile.domain.RecommendationSnapshot
+import com.sleepcare.mobile.domain.RecommendationStatus
 import com.sleepcare.mobile.domain.RecommendationTip
 import com.sleepcare.mobile.domain.ScoreCalculator
 import com.sleepcare.mobile.domain.SettingsRepository
@@ -58,7 +64,6 @@ import com.sleepcare.mobile.domain.WatchSessionEvent
 import com.sleepcare.mobile.domain.WatchSessionReady
 import com.sleepcare.mobile.data.source.HealthConnectSleepState
 import com.sleepcare.mobile.data.source.HealthConnectSleepDataSource
-import java.time.DayOfWeek
 import java.time.Duration
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -140,41 +145,22 @@ class DrowsinessRepositoryImpl @Inject constructor(
     override suspend fun refreshFromSource() = Unit
 }
 
-// 공부 계획은 한 개의 기본 플랜을 유지하고, 없으면 MVP 기본값을 심어 줍니다.
+// 공부 계획은 사용자가 직접 입력한 학습 가능 시간대만 저장합니다.
+// 데모 기본값을 심으면 추천이 실제 개인 데이터처럼 보이므로 초기 상태는 비워 둡니다.
 @Singleton
 class StudyPlanRepositoryImpl @Inject constructor(
     private val studyPlanDao: StudyPlanDao,
 ) : StudyPlanRepository {
     override fun observeStudyPlan(): Flow<StudyPlan?> = studyPlanDao.observeById().map { it?.toDomain() }
 
-    override suspend fun seedIfEmpty() {
-        if (studyPlanDao.count() == 0) {
-            upsert(
-                StudyPlan(
-                    startTime = LocalTime.of(8, 0),
-                    endTime = LocalTime.of(22, 30),
-                    focusHours = 8,
-                    days = setOf(
-                        DayOfWeek.MONDAY,
-                        DayOfWeek.TUESDAY,
-                        DayOfWeek.WEDNESDAY,
-                        DayOfWeek.THURSDAY,
-                        DayOfWeek.FRIDAY,
-                        DayOfWeek.SATURDAY,
-                    ),
-                    breakPreferenceMinutes = 15,
-                    autoBreakEnabled = true,
-                )
-            )
-        }
-    }
+    override suspend fun seedIfEmpty() = Unit
 
     override suspend fun upsert(plan: StudyPlan) {
         studyPlanDao.upsert(plan.toEntity())
     }
 }
 
-// 시험 일정은 추천 기상 시각 계산에서 가까운 시험을 찾는 입력으로 쓰입니다.
+// 시험 일정도 실제 사용자가 입력한 항목만 추천에 반영합니다.
 @Singleton
 class ExamScheduleRepositoryImpl @Inject constructor(
     private val examScheduleDao: ExamScheduleDao,
@@ -182,32 +168,7 @@ class ExamScheduleRepositoryImpl @Inject constructor(
     override fun observeExamSchedules(): Flow<List<ExamSchedule>> =
         examScheduleDao.observeAll().map { items -> items.map { it.toDomain() } }
 
-    override suspend fun seedIfEmpty() {
-        if (examScheduleDao.count() == 0) {
-            upsert(
-                ExamSchedule(
-                    name = "모의고사",
-                    date = LocalDate.now().plusDays(15),
-                    startTime = LocalTime.of(7, 0),
-                    endTime = LocalTime.of(12, 0),
-                    location = "본관 2층",
-                    priority = 1,
-                    syncEnabled = true,
-                )
-            )
-            upsert(
-                ExamSchedule(
-                    name = "수학 특강 테스트",
-                    date = LocalDate.now().plusDays(5),
-                    startTime = LocalTime.of(9, 0),
-                    endTime = LocalTime.of(10, 30),
-                    location = "스터디룸 A",
-                    priority = 2,
-                    syncEnabled = false,
-                )
-            )
-        }
-    }
+    override suspend fun seedIfEmpty() = Unit
 
     override suspend fun upsert(examSchedule: ExamSchedule) {
         examScheduleDao.upsert(examSchedule.toEntity())
@@ -914,93 +875,604 @@ class SettingsRepositoryImpl @Inject constructor(
 }
 
 // 규칙 기반 추천 엔진입니다.
-// 최근 수면, 졸음 이벤트, 시험 일정, 사용자 목표를 조합해 권장 취침/기상 시간을 만듭니다.
+// 한 번에 이상적인 시간을 찍기보다, 실제 수면 리듬에서 오늘 이동 가능한 폭까지 함께 계산합니다.
 @Singleton
 class SleepCareRecommendationEngine @Inject constructor() : RecommendationEngine {
     override fun generate(input: RecommendationInput): RecommendationSnapshot {
         val generatedAt = input.generatedAt
-        val recentSleep = input.sleepSessions.sortedByDescending { it.startTime }.take(3)
-        val recentDrowsiness = input.drowsinessEvents.sortedByDescending { it.timestamp }.take(5)
-        val averageSleepMinutes = recentSleep.map { it.totalMinutes.toDouble() }.averageOrNull()?.toInt()
-        val needsExtraRecovery = (averageSleepMinutes != null && averageSleepMinutes < 390) || recentDrowsiness.size >= 3
-        val targetSleepMinutes = if (needsExtraRecovery) 480 else 450
+        val sleepProfile = analyzeSleepRhythm(input.sleepSessions, generatedAt)
+        val drowsinessProfile = analyzeDrowsinessPattern(input.drowsinessEvents, generatedAt)
+        val academicProfile = analyzeAcademicPressure(input.exams, generatedAt)
+        val needsSetup = input.userGoals.targetWakeTime == null &&
+            input.userGoals.preferredBedtime == null &&
+            input.studyPlan == null &&
+            sleepProfile.averageMinutes == null &&
+            academicProfile.nextExam == null
 
-        // 2주 안의 가장 가까운 시험은 목표 기상 시각을 앞당기는 가장 강한 신호로 봅니다.
-        val examWakeCandidate = input.exams
-            .filter { !it.date.isBefore(generatedAt.toLocalDate()) && !it.date.isAfter(generatedAt.toLocalDate().plusDays(14)) }
-            .minWithOrNull(compareBy<ExamSchedule> { it.date }.thenBy { it.startTime })
-            ?.let { it.startTime.minusMinutes(90) }
-
-        // 명시 목표가 없으면 공부 시작 90분 전, 그것도 없으면 06:30을 기본 기상 시각으로 둡니다.
-        val baselineWakeTime = examWakeCandidate
-            ?: input.userGoals.targetWakeTime
-            ?: input.studyPlan?.startTime?.minusMinutes(90)
+        val targetSleepMinutes = calculateTargetSleepMinutes(sleepProfile, drowsinessProfile, academicProfile)
+        val normalWakeTime = input.userGoals.targetWakeTime
+            ?: sleepProfile.medianWakeTime
             ?: LocalTime.of(6, 30)
-
-        val bedtime = baselineWakeTime.minusMinutes(targetSleepMinutes.toLong()).minusMinutes(15)
-        val currentAverageBedtime = recentSleep
-            .map { it.startTime.toLocalTime().toSecondOfDay().toDouble() }
-            .averageOrNull()
-            ?.let { LocalTime.ofSecondOfDay(it.toLong()) }
-            ?: bedtime.plusMinutes(20)
-        val routineShiftMinutes = Duration.between(bedtime, currentAverageBedtime).toMinutes().toInt().coerceIn(-180, 180)
-
-        val reason = when {
-            examWakeCandidate != null && averageSleepMinutes == null ->
-                "시험 일정과 최근 졸음 패턴을 반영했어요. 수면 기록 보정은 Health Connect 연동 후 추가됩니다."
-            examWakeCandidate != null ->
-                "시험 대비 기상 리듬과 최근 컨디션을 함께 반영했어요."
-            averageSleepMinutes == null && recentDrowsiness.isNotEmpty() ->
-                "라즈베리파이의 최근 졸음 이벤트와 학습 계획 기준으로 루틴을 제안했어요."
-            averageSleepMinutes == null ->
-                "수면 기록 없이도 학습 계획과 사용자 목표를 기반으로 기본 루틴을 제안합니다."
-            needsExtraRecovery ->
-                "최근 수면 부족과 졸음 신호를 함께 반영했어요."
-            else ->
-                "현재 루틴을 조금만 조정하면 집중력이 더 좋아져요."
+        val wakeFromPreferredBedtime = input.userGoals.preferredBedtime
+            ?.plusMinutes((targetSleepMinutes + SLEEP_PREP_MINUTES).toLong())
+        val desiredWakeTime = when {
+            academicProfile.wakeDeadline != null && normalWakeTime.isAfter(academicProfile.wakeDeadline) ->
+                academicProfile.wakeDeadline
+            input.userGoals.targetWakeTime == null && sleepProfile.medianWakeTime == null && wakeFromPreferredBedtime != null ->
+                wakeFromPreferredBedtime
+            else -> normalWakeTime
         }
-
-        val tips = buildList {
-            add(
-                RecommendationTip(
-                    title = "카페인 컷오프",
-                    body = "${baselineWakeTime.minusHours(4)} 이후 카페인을 줄이면 취침 준비가 쉬워집니다.",
-                    iconKey = "coffee",
-                )
-            )
-            add(
-                RecommendationTip(
-                    title = "집중 블록",
-                    body = "${baselineWakeTime.plusHours(1)}부터 2시간은 가장 어려운 과목에 배정해 보세요.",
-                    iconKey = "focus",
-                )
-            )
-            add(
-                RecommendationTip(
-                    title = if (averageSleepMinutes == null) "수면 연동 안내" else "회복 루틴",
-                    body = if (averageSleepMinutes == null) {
-                        "Health Connect 수면 동기화가 붙으면 실제 수면 기록을 반영해 추천을 더 정교하게 조정합니다."
-                    } else if (needsExtraRecovery) {
-                        "오후 ${recentDrowsiness.lastOrNull()?.timestamp?.toLocalTime() ?: LocalTime.of(14, 30)} 전후 15분 휴식을 권장합니다."
-                    } else {
-                        "${bedtime.minusMinutes(45)}부터 조명을 낮추고 복습 강도를 줄여 보세요."
-                    },
-                    iconKey = if (averageSleepMinutes == null) "sync" else "rest",
-                )
+        val urgentWakeDeadline = academicProfile.wakeDeadline != null && (academicProfile.daysUntil ?: 99) <= 3
+        val recommendedWakeTime = if (urgentWakeDeadline) {
+            desiredWakeTime
+        } else {
+            shiftByConsistency(
+                current = sleepProfile.medianWakeTime,
+                target = desiredWakeTime,
+                mode = sleepProfile.mode,
+                forWake = true,
             )
         }
+        val desiredBedtime = recommendedWakeTime.minusMinutes((targetSleepMinutes + SLEEP_PREP_MINUTES).toLong())
+        val recommendedBedtime = shiftByConsistency(
+            current = sleepProfile.medianBedtime,
+            target = desiredBedtime,
+            mode = sleepProfile.mode,
+            forWake = false,
+        )
+        val routineShiftMinutes = sleepProfile.medianBedtime
+            ?.let { circularDiffMinutes(it, recommendedBedtime) }
+            ?: 0
+        val status = when {
+            needsSetup -> RecommendationStatus.NeedsSetup
+            sleepProfile.mode == ConsistencyMode.InsufficientData -> RecommendationStatus.LowConfidence
+            else -> RecommendationStatus.Ready
+        }
+        val factors = buildRecommendationFactors(
+            sleepProfile = sleepProfile,
+            drowsinessProfile = drowsinessProfile,
+            academicProfile = academicProfile,
+            studyPlan = input.studyPlan,
+            userGoals = input.userGoals,
+            recommendedBedtime = recommendedBedtime,
+        )
+        val actionBlocks = buildRecommendationActionBlocks(
+            recommendedBedtime = recommendedBedtime,
+            studyPlan = input.studyPlan,
+            drowsinessProfile = drowsinessProfile,
+            academicProfile = academicProfile,
+        )
+        val reason = buildRecommendationReason(
+            status = status,
+            sleepProfile = sleepProfile,
+            drowsinessProfile = drowsinessProfile,
+            academicProfile = academicProfile,
+            hasStudyPlan = input.studyPlan != null,
+            hasUserGoal = input.userGoals.targetWakeTime != null || input.userGoals.preferredBedtime != null,
+        )
+        val tips = buildRecommendationTips(
+            recommendedBedtime = recommendedBedtime,
+            sleepProfile = sleepProfile,
+            drowsinessProfile = drowsinessProfile,
+            academicProfile = academicProfile,
+            studyPlan = input.studyPlan,
+        )
 
         return RecommendationSnapshot(
-            recommendedBedtime = bedtime,
-            recommendedWakeTime = baselineWakeTime,
+            recommendedBedtime = recommendedBedtime,
+            recommendedWakeTime = recommendedWakeTime,
             targetSleepMinutes = targetSleepMinutes,
             reason = reason,
             routineShiftMinutes = routineShiftMinutes,
+            status = status,
+            factors = factors,
+            actionBlocks = actionBlocks,
             tips = tips.take(3),
             generatedAt = generatedAt,
         )
     }
 }
+
+private const val BASE_TARGET_SLEEP_MINUTES = 450
+private const val SLEEP_PREP_MINUTES = 15
+private const val DROWSINESS_LOOKBACK_DAYS = 14L
+
+private enum class ConsistencyMode {
+    Stable,
+    Drifting,
+    Irregular,
+    InsufficientData,
+}
+
+private enum class DrowsinessBucket(val label: String) {
+    Dawn("새벽"),
+    Morning("오전"),
+    Afternoon("오후"),
+    Night("밤"),
+}
+
+private enum class ExamTimeBand(val label: String) {
+    EarlyMorning("이른 오전"),
+    LateMorning("늦은 오전"),
+    Afternoon("오후"),
+    Evening("저녁"),
+}
+
+private data class SleepRhythmProfile(
+    val sessionCount: Int,
+    val averageMinutes: Int?,
+    val medianBedtime: LocalTime?,
+    val medianWakeTime: LocalTime?,
+    val bedtimeDeviationMinutes: Int?,
+    val wakeDeviationMinutes: Int?,
+    val mode: ConsistencyMode,
+)
+
+private data class DrowsinessPatternProfile(
+    val recentEvents: List<DrowsinessEvent>,
+    val peakBucket: DrowsinessBucket?,
+    val peakCount: Int,
+    val extraSleepMinutes: Int,
+    val severity: RecommendationFactorSeverity,
+)
+
+private data class AcademicPressureProfile(
+    val nextExam: ExamSchedule?,
+    val daysUntil: Int?,
+    val band: ExamTimeBand?,
+    val wakeDeadline: LocalTime?,
+    val shouldProtectSleep: Boolean,
+)
+
+private fun analyzeSleepRhythm(
+    sessions: List<com.sleepcare.mobile.domain.SleepSession>,
+    generatedAt: LocalDateTime,
+): SleepRhythmProfile {
+    val recent = sessions
+        .filter { !it.endTime.isAfter(generatedAt) }
+        .sortedByDescending { it.endTime }
+        .take(7)
+    if (recent.isEmpty()) {
+        return SleepRhythmProfile(0, null, null, null, null, null, ConsistencyMode.InsufficientData)
+    }
+
+    val bedtimeMinutes = recent.map { it.startTime.toLocalTime().toBedtimeAxisMinute() }
+    val wakeMinutes = recent.map { it.endTime.toLocalTime().toMinuteOfDay() }
+    val medianBedtimeMinute = bedtimeMinutes.medianInt()
+    val medianWakeMinute = wakeMinutes.medianInt()
+    val bedtimeDeviation = bedtimeMinutes.averageAbsoluteDeviation(medianBedtimeMinute)
+    val wakeDeviation = wakeMinutes.averageAbsoluteDeviation(medianWakeMinute)
+    val maxDeviation = maxOf(bedtimeDeviation, wakeDeviation)
+    val mode = when {
+        recent.size < 3 -> ConsistencyMode.InsufficientData
+        maxDeviation <= 45 -> ConsistencyMode.Stable
+        maxDeviation <= 90 -> ConsistencyMode.Drifting
+        else -> ConsistencyMode.Irregular
+    }
+
+    return SleepRhythmProfile(
+        sessionCount = recent.size,
+        averageMinutes = recent.map { it.totalMinutes }.average().toInt(),
+        medianBedtime = LocalTime.of((medianBedtimeMinute.floorModDay()) / 60, medianBedtimeMinute.floorModDay() % 60),
+        medianWakeTime = LocalTime.of(medianWakeMinute / 60, medianWakeMinute % 60),
+        bedtimeDeviationMinutes = bedtimeDeviation,
+        wakeDeviationMinutes = wakeDeviation,
+        mode = mode,
+    )
+}
+
+private fun analyzeDrowsinessPattern(
+    events: List<DrowsinessEvent>,
+    generatedAt: LocalDateTime,
+): DrowsinessPatternProfile {
+    val cutoff = generatedAt.minusDays(DROWSINESS_LOOKBACK_DAYS)
+    val recent = events
+        .filter { !it.timestamp.isBefore(cutoff) && !it.timestamp.isAfter(generatedAt) }
+        .sortedByDescending { it.timestamp }
+    if (recent.isEmpty()) {
+        return DrowsinessPatternProfile(emptyList(), null, 0, 0, RecommendationFactorSeverity.Unknown)
+    }
+
+    val bucketCounts = recent.groupingBy { it.timestamp.toLocalTime().toDrowsinessBucket() }.eachCount()
+    val peak = bucketCounts.maxWith(compareBy<Map.Entry<DrowsinessBucket, Int>> { it.value }.thenBy { it.key.ordinal })
+    val severity = when {
+        peak.value >= 3 -> RecommendationFactorSeverity.NeedsAction
+        recent.size >= 3 -> RecommendationFactorSeverity.Watch
+        else -> RecommendationFactorSeverity.Good
+    }
+    val extraSleep = when {
+        severity == RecommendationFactorSeverity.NeedsAction && peak.key == DrowsinessBucket.Morning -> 30
+        severity == RecommendationFactorSeverity.NeedsAction -> 15
+        severity == RecommendationFactorSeverity.Watch -> 15
+        else -> 0
+    }
+
+    return DrowsinessPatternProfile(
+        recentEvents = recent,
+        peakBucket = peak.key,
+        peakCount = peak.value,
+        extraSleepMinutes = extraSleep,
+        severity = severity,
+    )
+}
+
+private fun analyzeAcademicPressure(
+    exams: List<ExamSchedule>,
+    generatedAt: LocalDateTime,
+): AcademicPressureProfile {
+    val today = generatedAt.toLocalDate()
+    val nextExam = exams
+        .filter { exam ->
+            !exam.date.isBefore(today) &&
+                !exam.date.isAfter(today.plusDays(14)) &&
+                !(exam.date == today && !exam.startTime.isAfter(generatedAt.toLocalTime()))
+        }
+        .minWithOrNull(compareBy<ExamSchedule> { it.date }.thenBy { it.startTime }.thenBy { it.priority })
+    val daysUntil = nextExam?.let { Duration.between(today.atStartOfDay(), it.date.atStartOfDay()).toDays().toInt() }
+    val band = nextExam?.startTime?.toExamTimeBand()
+    val wakeDeadline = when (band) {
+        ExamTimeBand.EarlyMorning -> nextExam.startTime.minusMinutes(120)
+        ExamTimeBand.LateMorning -> nextExam.startTime.minusMinutes(90)
+        ExamTimeBand.Afternoon,
+        ExamTimeBand.Evening,
+        null -> null
+    }
+
+    return AcademicPressureProfile(
+        nextExam = nextExam,
+        daysUntil = daysUntil,
+        band = band,
+        wakeDeadline = wakeDeadline,
+        shouldProtectSleep = daysUntil != null && daysUntil <= 3,
+    )
+}
+
+private fun calculateTargetSleepMinutes(
+    sleepProfile: SleepRhythmProfile,
+    drowsinessProfile: DrowsinessPatternProfile,
+    academicProfile: AcademicPressureProfile,
+): Int {
+    var target = BASE_TARGET_SLEEP_MINUTES
+    val averageSleep = sleepProfile.averageMinutes
+    if (averageSleep != null && averageSleep < 390) target += 30
+    if (averageSleep != null && averageSleep in 390 until 420) target += 15
+    if (sleepProfile.mode == ConsistencyMode.Irregular) target += 15
+    target += drowsinessProfile.extraSleepMinutes
+    if (academicProfile.shouldProtectSleep) target = maxOf(target, 480)
+    return target.coerceIn(420, 540)
+}
+
+private fun buildRecommendationFactors(
+    sleepProfile: SleepRhythmProfile,
+    drowsinessProfile: DrowsinessPatternProfile,
+    academicProfile: AcademicPressureProfile,
+    studyPlan: StudyPlan?,
+    userGoals: UserGoals,
+    recommendedBedtime: LocalTime,
+): List<RecommendationFactor> = buildList {
+    add(
+        RecommendationFactor(
+            type = RecommendationFactorType.SleepDuration,
+            title = "수면 시간",
+            value = sleepProfile.averageMinutes?.let { "최근 평균 ${it.toDurationText()}" } ?: "수면 기록 없음",
+            description = sleepProfile.averageMinutes?.let { "최근 ${sleepProfile.sessionCount}개 수면 세션의 평균을 목표 수면량에 반영했습니다." }
+                ?: "Health Connect 기록이 들어오기 전까지는 수면량 보정 없이 추천합니다.",
+            severity = when {
+                sleepProfile.averageMinutes == null -> RecommendationFactorSeverity.Unknown
+                sleepProfile.averageMinutes < 390 -> RecommendationFactorSeverity.NeedsAction
+                sleepProfile.averageMinutes < 420 -> RecommendationFactorSeverity.Watch
+                else -> RecommendationFactorSeverity.Good
+            },
+        )
+    )
+    add(
+        RecommendationFactor(
+            type = RecommendationFactorType.SleepConsistency,
+            title = "리듬 조정",
+            value = sleepProfile.mode.toKoreanLabel(),
+            description = sleepProfile.toConsistencyDescription(recommendedBedtime),
+            severity = when (sleepProfile.mode) {
+                ConsistencyMode.Stable -> RecommendationFactorSeverity.Good
+                ConsistencyMode.Drifting -> RecommendationFactorSeverity.Watch
+                ConsistencyMode.Irregular -> RecommendationFactorSeverity.NeedsAction
+                ConsistencyMode.InsufficientData -> RecommendationFactorSeverity.Unknown
+            },
+        )
+    )
+    add(
+        RecommendationFactor(
+            type = RecommendationFactorType.DrowsinessPattern,
+            title = if (drowsinessProfile.recentEvents.isEmpty()) "Pi 이벤트" else "졸음 패턴",
+            value = if (drowsinessProfile.recentEvents.isEmpty()) {
+                "최근 14일 0회"
+            } else {
+                "${drowsinessProfile.peakBucket?.label} ${drowsinessProfile.peakCount}회 집중"
+            },
+            description = if (drowsinessProfile.recentEvents.isEmpty()) {
+                "alert.fire 기록이 없어 해당 신호는 계산에서 제외했습니다."
+            } else {
+                "최근 14일 이벤트만 사용해 시간대 반복 여부를 봤습니다."
+            },
+            severity = drowsinessProfile.severity,
+        )
+    )
+    add(
+        RecommendationFactor(
+            type = RecommendationFactorType.AcademicSchedule,
+            title = "시험 일정",
+            value = academicProfile.nextExam?.let { "${academicProfile.band?.label ?: "시험"} · ${it.startTime.formatClock()}" } ?: "시험 일정 없음",
+            description = academicProfile.toDescription(),
+            severity = when {
+                academicProfile.nextExam == null -> RecommendationFactorSeverity.Unknown
+                academicProfile.shouldProtectSleep -> RecommendationFactorSeverity.NeedsAction
+                else -> RecommendationFactorSeverity.Watch
+            },
+        )
+    )
+    add(
+        RecommendationFactor(
+            type = RecommendationFactorType.StudyPlan,
+            title = "학습 가능 시간",
+            value = studyPlan?.let { "${it.startTime.formatClock()} - ${it.endTime.formatClock()}" } ?: "미설정",
+            description = studyPlan?.let { "학습 가능 시간은 첫 집중 블록과 저녁 학습 마감 판단에만 사용합니다." }
+                ?: "학습 가능 시간대를 설정하면 추천 블록이 더 구체화됩니다.",
+            severity = if (studyPlan == null) RecommendationFactorSeverity.Unknown else RecommendationFactorSeverity.Good,
+        )
+    )
+    add(
+        RecommendationFactor(
+            type = RecommendationFactorType.UserGoal,
+            title = "사용자 목표",
+            value = buildUserGoalValue(userGoals),
+            description = "목표 시간은 추천의 명시 기준이며, 학습 플랜 저장으로 자동 변경하지 않습니다.",
+            severity = if (userGoals.targetWakeTime == null && userGoals.preferredBedtime == null) {
+                RecommendationFactorSeverity.Unknown
+            } else {
+                RecommendationFactorSeverity.Good
+            },
+        )
+    )
+}
+
+private fun buildRecommendationActionBlocks(
+    recommendedBedtime: LocalTime,
+    studyPlan: StudyPlan?,
+    drowsinessProfile: DrowsinessPatternProfile,
+    academicProfile: AcademicPressureProfile,
+): List<RecommendationActionBlock> = buildList {
+    add(
+        RecommendationActionBlock(
+            type = RecommendationActionBlockType.SleepPrep,
+            title = "취침 준비",
+            timeLabel = "${recommendedBedtime.minusMinutes(45).formatClock()} - ${recommendedBedtime.formatClock()}",
+            description = "조명과 복습 강도를 낮춰 실제 취침 시각으로 부드럽게 이동합니다.",
+        )
+    )
+    if (studyPlan != null) {
+        val focusEnd = minOf(studyPlan.startTime.plusHours(2), studyPlan.endTime)
+        add(
+            RecommendationActionBlock(
+                type = RecommendationActionBlockType.FocusStudy,
+                title = "첫 집중 블록",
+                timeLabel = "${studyPlan.startTime.formatClock()} - ${focusEnd.formatClock()}",
+                description = "학습 가능 시간의 앞부분에 가장 부담 큰 과목을 배치합니다.",
+            )
+        )
+    }
+    if (studyPlan?.autoBreakEnabled == true && drowsinessProfile.recentEvents.isNotEmpty()) {
+        add(
+            RecommendationActionBlock(
+                type = RecommendationActionBlockType.Recovery,
+                title = "${drowsinessProfile.peakBucket?.label ?: "반복"} 회복 블록",
+                timeLabel = drowsinessProfile.peakBucket?.label ?: "반복 시간대",
+                description = "반복 이벤트가 몰린 시간대에는 15분 회복을 먼저 배치합니다.",
+            )
+        )
+    }
+    val exam = academicProfile.nextExam
+    if (exam != null) {
+        val block = when (academicProfile.band) {
+            ExamTimeBand.Afternoon,
+            ExamTimeBand.Evening -> RecommendationActionBlock(
+                type = RecommendationActionBlockType.ExamPrep,
+                title = "시험 전 집중 복습",
+                timeLabel = "${exam.startTime.minusHours(3).formatClock()} - ${exam.startTime.minusHours(1).formatClock()}",
+                description = "오후/저녁 시험은 기상 시간을 당기지 않고 시험 전 복습 구간을 확보합니다.",
+            )
+            else -> RecommendationActionBlock(
+                type = RecommendationActionBlockType.ExamPrep,
+                title = "오전 시험 준비",
+                timeLabel = academicProfile.wakeDeadline?.let { "기상 마감 ${it.formatClock()}" } ?: "시험 전날",
+                description = "오전 시험은 늦지 않는 기상 마감과 전날 수면 확보를 우선합니다.",
+            )
+        }
+        add(block)
+    }
+}
+
+private fun buildRecommendationTips(
+    recommendedBedtime: LocalTime,
+    sleepProfile: SleepRhythmProfile,
+    drowsinessProfile: DrowsinessPatternProfile,
+    academicProfile: AcademicPressureProfile,
+    studyPlan: StudyPlan?,
+): List<RecommendationTip> = buildList {
+    add(
+        RecommendationTip(
+            title = if (sleepProfile.averageMinutes == null) "수면 연동 안내" else "취침 준비",
+            body = if (sleepProfile.averageMinutes == null) {
+                "Health Connect 기록이 들어오면 실제 수면량과 리듬을 반영해 추천을 다시 조정합니다."
+            } else {
+                "${recommendedBedtime.minusMinutes(45).formatClock()}부터 조명과 복습 강도를 낮춰 보세요."
+            },
+            iconKey = if (sleepProfile.averageMinutes == null) "sync" else "rest",
+        )
+    )
+    if (studyPlan == null) {
+        add(
+            RecommendationTip(
+                title = "학습 가능 시간 설정",
+                body = "학습 가능 시작/종료 시간을 넣으면 첫 집중 블록과 저녁 마감 시간을 함께 제안합니다.",
+                iconKey = "focus",
+            )
+        )
+    } else {
+        add(
+            RecommendationTip(
+                title = "첫 집중 블록",
+                body = "${studyPlan.startTime.formatClock()}부터 학습 가능 시간 안에서 가장 어려운 과목을 먼저 배치해 보세요.",
+                iconKey = "focus",
+            )
+        )
+    }
+    if (studyPlan?.autoBreakEnabled == true && drowsinessProfile.recentEvents.isNotEmpty()) {
+        add(
+            RecommendationTip(
+                title = "회복 블록",
+                body = "${drowsinessProfile.peakBucket?.label ?: "반복"} 시간대 이벤트가 반복되어 15분 회복 블록을 권장합니다.",
+                iconKey = "rest",
+            )
+        )
+    }
+    if (academicProfile.nextExam != null) {
+        add(
+            RecommendationTip(
+                title = "시험 준비",
+                body = academicProfile.toTipText(),
+                iconKey = "exam",
+            )
+        )
+    }
+}
+
+private fun buildRecommendationReason(
+    status: RecommendationStatus,
+    sleepProfile: SleepRhythmProfile,
+    drowsinessProfile: DrowsinessPatternProfile,
+    academicProfile: AcademicPressureProfile,
+    hasStudyPlan: Boolean,
+    hasUserGoal: Boolean,
+): String = when {
+    status == RecommendationStatus.NeedsSetup ->
+        "수면 목표, 학습 가능 시간, 시험 일정 중 하나를 설정하면 개인 루틴을 계산합니다."
+    academicProfile.nextExam != null && academicProfile.band in setOf(ExamTimeBand.Afternoon, ExamTimeBand.Evening) ->
+        "${academicProfile.band?.label} 시험은 기상 시간을 유지하고 시험 전 복습/회복 블록을 배치했어요."
+    academicProfile.wakeDeadline != null ->
+        "오전 시험 기상 마감과 전날 수면 확보를 함께 반영했어요."
+    drowsinessProfile.recentEvents.isNotEmpty() && sleepProfile.averageMinutes != null ->
+        "최근 수면 리듬과 Pi 이벤트 반복 시간대를 함께 반영했어요."
+    sleepProfile.averageMinutes != null ->
+        "최근 수면 리듬을 기준으로 오늘 이동 가능한 취침 시간을 제안했어요."
+    hasUserGoal ->
+        "사용자 목표 시간을 기준으로 기본 수면 루틴을 제안합니다."
+    hasStudyPlan ->
+        "학습 가능 시간대를 기준으로 기본 루틴을 제안합니다."
+    else ->
+        "아직 수면 기록이 부족해 기본 루틴으로 시작합니다."
+}
+
+private fun shiftByConsistency(
+    current: LocalTime?,
+    target: LocalTime,
+    mode: ConsistencyMode,
+    forWake: Boolean,
+): LocalTime {
+    if (current == null || mode == ConsistencyMode.Stable || mode == ConsistencyMode.InsufficientData) return target
+    val maxShift = when (mode) {
+        ConsistencyMode.Drifting -> 30
+        ConsistencyMode.Irregular -> if (forWake) 45 else 30
+        ConsistencyMode.Stable,
+        ConsistencyMode.InsufficientData -> return target
+    }
+    val diff = circularDiffMinutes(current, target).coerceIn(-maxShift, maxShift)
+    return current.plusMinutes(diff.toLong())
+}
+
+private fun SleepRhythmProfile.toConsistencyDescription(recommendedBedtime: LocalTime): String = when (mode) {
+    ConsistencyMode.Stable -> "최근 리듬이 안정적이라 목표 시간에 바로 맞춰도 부담이 작습니다."
+    ConsistencyMode.Drifting -> "취침/기상 편차가 있어 오늘은 ${recommendedBedtime.formatClock()}까지 완만하게 이동합니다."
+    ConsistencyMode.Irregular -> "리듬이 크게 흔들려 기상 고정과 작은 취침 이동을 우선합니다."
+    ConsistencyMode.InsufficientData -> "수면 세션이 3개 미만이라 일관성 판단은 보류합니다."
+}
+
+private fun AcademicPressureProfile.toDescription(): String {
+    val exam = nextExam ?: return "시험 일정이 없어 기상 시간에는 반영하지 않았습니다."
+    return when (band) {
+        ExamTimeBand.EarlyMorning,
+        ExamTimeBand.LateMorning -> "오전 시험이라 ${wakeDeadline?.formatClock()} 기상 마감을 필요한 경우에만 반영합니다."
+        ExamTimeBand.Afternoon,
+        ExamTimeBand.Evening -> "${exam.startTime.formatClock()} 시험이라 기상 시간 대신 시험 전 복습 블록을 배치합니다."
+        null -> "시험 시간이 없어 학습 블록에만 참고합니다."
+    }
+}
+
+private fun AcademicPressureProfile.toTipText(): String {
+    val exam = nextExam ?: return "시험 일정이 추가되면 준비 블록을 함께 제안합니다."
+    return when (band) {
+        ExamTimeBand.Afternoon,
+        ExamTimeBand.Evening -> "${exam.startTime.minusHours(3).formatClock()}부터 핵심 복습을 끝내고 시험 1시간 전에는 정리만 남겨두세요."
+        else -> "오전 시험 전날에는 수면 시간을 먼저 확보하고, 기상 마감 ${wakeDeadline?.formatClock() ?: exam.startTime.formatClock()}을 넘기지 않습니다."
+    }
+}
+
+private fun buildUserGoalValue(goals: UserGoals): String = listOfNotNull(
+    goals.targetWakeTime?.let { "기상 ${it.formatClock()}" },
+    goals.preferredBedtime?.let { "취침 ${it.formatClock()}" },
+).ifEmpty { listOf("미설정") }.joinToString(" · ")
+
+private fun ConsistencyMode.toKoreanLabel(): String = when (this) {
+    ConsistencyMode.Stable -> "안정"
+    ConsistencyMode.Drifting -> "완만 조정"
+    ConsistencyMode.Irregular -> "기상 고정 우선"
+    ConsistencyMode.InsufficientData -> "판단 보류"
+}
+
+private fun LocalTime.toDrowsinessBucket(): DrowsinessBucket = when (hour) {
+    in 0..5 -> DrowsinessBucket.Dawn
+    in 6..11 -> DrowsinessBucket.Morning
+    in 12..17 -> DrowsinessBucket.Afternoon
+    else -> DrowsinessBucket.Night
+}
+
+private fun LocalTime.toExamTimeBand(): ExamTimeBand = when (hour) {
+    in 0..9 -> ExamTimeBand.EarlyMorning
+    in 10..11 -> ExamTimeBand.LateMorning
+    in 12..17 -> ExamTimeBand.Afternoon
+    else -> ExamTimeBand.Evening
+}
+
+private fun Int.floorModDay(): Int = ((this % 1440) + 1440) % 1440
+
+private fun LocalTime.toMinuteOfDay(): Int = hour * 60 + minute
+
+private fun LocalTime.toBedtimeAxisMinute(): Int {
+    val minute = toMinuteOfDay()
+    return if (minute < 12 * 60) minute + 1440 else minute
+}
+
+private fun List<Int>.medianInt(): Int {
+    val sorted = sorted()
+    val middle = sorted.size / 2
+    return if (sorted.size % 2 == 0) {
+        ((sorted[middle - 1] + sorted[middle]) / 2)
+    } else {
+        sorted[middle]
+    }
+}
+
+private fun List<Int>.averageAbsoluteDeviation(center: Int): Int =
+    map { abs(it - center) }.average().toInt()
+
+private fun circularDiffMinutes(from: LocalTime, to: LocalTime): Int {
+    var diff = to.toMinuteOfDay() - from.toMinuteOfDay()
+    while (diff > 720) diff -= 1440
+    while (diff < -720) diff += 1440
+    return diff
+}
+
+private fun Int.toDurationText(): String = "${this / 60}시간 ${this % 60}분"
+
+private fun LocalTime.formatClock(): String = "%02d:%02d".format(hour, minute)
 
 // 수면 세션 목록을 화면 지표로 바꾸는 순수 계산 함수입니다.
 fun buildSleepAnalysisSnapshot(sessions: List<com.sleepcare.mobile.domain.SleepSession>): SleepAnalysisSnapshot {

@@ -29,6 +29,7 @@ import com.sleepcare.mobile.domain.DrowsinessRepository
 import com.sleepcare.mobile.domain.ExamScheduleRepository
 import com.sleepcare.mobile.domain.HomeDashboardSnapshot
 import com.sleepcare.mobile.domain.RecommendationRepository
+import com.sleepcare.mobile.domain.RecommendationStatus
 import com.sleepcare.mobile.domain.SleepRepository
 import com.sleepcare.mobile.domain.StudySessionMode
 import com.sleepcare.mobile.domain.StudySessionPhase
@@ -88,6 +89,8 @@ fun HomeScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val ticker by rememberTickerMillis()
     val latestSleep = uiState.snapshot.latestSleep
+    val recommendation = uiState.snapshot.recommendation
+    val hasReadyRecommendation = recommendation != null && recommendation.status != RecommendationStatus.NeedsSetup
     // 세션 진행 중에는 1초마다 현재 시각을 갱신해 경과 시간을 계산합니다.
     val timerText = uiState.studySession.startedAt?.let { startedAt ->
         val elapsedMillis = (ticker - startedAt.toEpochMillis()).coerceAtLeast(0L)
@@ -144,8 +147,12 @@ fun HomeScreen(
                 MetricHeroCard(
                     modifier = Modifier.weight(1f),
                     title = "오늘 추천 취침",
-                    value = uiState.snapshot.recommendation?.recommendedBedtime?.toDisplayTime() ?: "--:--",
-                    subtitle = "권장 기상 ${uiState.snapshot.recommendation?.recommendedWakeTime?.toDisplayTime() ?: "--:--"}",
+                    value = if (hasReadyRecommendation) recommendation.recommendedBedtime.toDisplayTime() else "--:--",
+                    subtitle = if (hasReadyRecommendation) {
+                        "권장 기상 ${recommendation.recommendedWakeTime.toDisplayTime()}"
+                    } else {
+                        "기준 설정 필요"
+                    },
                     accent = SleepCareTertiary,
                     onClick = onOpenSchedule,
                 )

@@ -12,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
@@ -39,6 +40,7 @@ import com.sleepcare.mobile.domain.ExamSchedule
 import com.sleepcare.mobile.domain.ExamScheduleRepository
 import com.sleepcare.mobile.domain.RecommendationRepository
 import com.sleepcare.mobile.domain.RecommendationSnapshot
+import com.sleepcare.mobile.domain.RecommendationStatus
 import com.sleepcare.mobile.domain.SettingsRepository
 import com.sleepcare.mobile.domain.StudyPlan
 import com.sleepcare.mobile.domain.StudyPlanRepository
@@ -75,6 +77,8 @@ fun SleepScheduleSuggestionScreen(
     viewModel: ScheduleViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val recommendation = uiState.recommendation
+    val hasReadyRecommendation = recommendation != null && recommendation.status != RecommendationStatus.NeedsSetup
     LazyColumn(
         modifier = Modifier.padding(paddingValues),
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 18.dp),
@@ -83,22 +87,118 @@ fun SleepScheduleSuggestionScreen(
         item { Text("수면 스케줄 제안", style = MaterialTheme.typography.headlineMedium) }
         item {
             ScheduleHero(
-                bedtime = uiState.recommendation?.recommendedBedtime?.toDisplayTime() ?: "--:--",
-                wakeTime = uiState.recommendation?.recommendedWakeTime?.toDisplayTime() ?: "--:--",
-                totalSleep = uiState.recommendation?.targetSleepMinutes?.let { "${it / 60}시간 ${it % 60}분" } ?: "데이터 준비 중",
-                reason = uiState.recommendation?.reason ?: "추천 로직 계산 중",
-                primaryActionLabel = "학습 플랜 수정",
+                bedtime = if (hasReadyRecommendation) recommendation.recommendedBedtime.toDisplayTime() else "--:--",
+                wakeTime = if (hasReadyRecommendation) recommendation.recommendedWakeTime.toDisplayTime() else "--:--",
+                totalSleep = if (hasReadyRecommendation) {
+                    "${recommendation.targetSleepMinutes / 60}시간 ${recommendation.targetSleepMinutes % 60}분"
+                } else {
+                    "기준 설정 필요"
+                },
+                reason = recommendation?.reason ?: "수면 목표나 학습 가능 시간대를 설정하면 추천을 만들 수 있습니다.",
+                primaryActionLabel = "학습 가능 시간 설정",
                 secondaryActionLabel = "시험 일정 관리",
                 onPrimaryAction = onOpenStudyPlan,
                 onSecondaryAction = onOpenExamSchedule,
             )
         }
-        items(uiState.recommendation?.tips.orEmpty()) { tip ->
+        item {
+            UserGoalCard(
+                userGoals = uiState.userGoals,
+                onSave = viewModel::saveUserGoals,
+            )
+        }
+        if (recommendation != null) {
+            item { Text("판단 근거", style = MaterialTheme.typography.titleMedium) }
+            items(recommendation.factors) { factor ->
+                GlassCard {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(factor.title, style = MaterialTheme.typography.titleMedium)
+                        Text(factor.value, style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            factor.description,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+            if (recommendation.actionBlocks.isNotEmpty()) {
+                item { Text("오늘의 실행 블록", style = MaterialTheme.typography.titleMedium) }
+                items(recommendation.actionBlocks) { block ->
+                    GlassCard {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(block.title, style = MaterialTheme.typography.titleMedium)
+                            Text(block.timeLabel, style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                block.description,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        items(recommendation?.tips.orEmpty()) { tip ->
             GlassCard {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(tip.title, style = MaterialTheme.typography.titleMedium)
                     Text(tip.body, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun UserGoalCard(
+    userGoals: UserGoals,
+    onSave: (UserGoals) -> Unit,
+) {
+    var wakeText by rememberSaveable(userGoals.targetWakeTime) { mutableStateOf(userGoals.targetWakeTime?.toDisplayTime() ?: "") }
+    var bedtimeText by rememberSaveable(userGoals.preferredBedtime) { mutableStateOf(userGoals.preferredBedtime?.toDisplayTime() ?: "") }
+    var error by rememberSaveable { mutableStateOf<String?>(null) }
+
+    GlassCard {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("수면 목표", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "비워두면 해당 목표는 추천 기준에서 제외합니다.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    modifier = Modifier.weight(1f),
+                    value = wakeText,
+                    onValueChange = { wakeText = it },
+                    label = { Text("목표 기상") },
+                    placeholder = { Text("07:00") },
+                )
+                OutlinedTextField(
+                    modifier = Modifier.weight(1f),
+                    value = bedtimeText,
+                    onValueChange = { bedtimeText = it },
+                    label = { Text("선호 취침") },
+                    placeholder = { Text("23:00") },
+                )
+            }
+            error?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            }
+            Button(
+                modifier = Modifier.fillMaxWidth(),
+                onClick = {
+                    val result = parseUserGoalsForm(wakeText, bedtimeText)
+                    if (result.error != null) {
+                        error = result.error
+                    } else {
+                        error = null
+                        onSave(result.value ?: UserGoals())
+                    }
+                },
+            ) {
+                Text("수면 목표 저장")
             }
         }
     }
@@ -114,20 +214,13 @@ fun StudyPlanScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val currentPlan = uiState.studyPlan
-    var startText by rememberSaveable(currentPlan) { mutableStateOf(currentPlan?.startTime?.toDisplayTime() ?: "08:00") }
-    var endText by rememberSaveable(currentPlan) { mutableStateOf(currentPlan?.endTime?.toDisplayTime() ?: "22:30") }
-    var focusHours by rememberSaveable(currentPlan) { mutableStateOf((currentPlan?.focusHours ?: 8).toString()) }
-    var breakMinutes by rememberSaveable(currentPlan) { mutableStateOf((currentPlan?.breakPreferenceMinutes ?: 15).toString()) }
+    var startText by rememberSaveable(currentPlan) { mutableStateOf(currentPlan?.startTime?.toDisplayTime() ?: "") }
+    var endText by rememberSaveable(currentPlan) { mutableStateOf(currentPlan?.endTime?.toDisplayTime() ?: "") }
     var autoBreak by rememberSaveable(currentPlan) { mutableStateOf(currentPlan?.autoBreakEnabled ?: true) }
+    var error by rememberSaveable(currentPlan) { mutableStateOf<String?>(null) }
     // 요일 선택은 Set으로 들고 있다가 저장할 때 StudyPlan으로 변환합니다.
     var selectedDays by remember(currentPlan) {
-        mutableStateOf(currentPlan?.days ?: setOf(
-            DayOfWeek.MONDAY,
-            DayOfWeek.TUESDAY,
-            DayOfWeek.WEDNESDAY,
-            DayOfWeek.THURSDAY,
-            DayOfWeek.FRIDAY,
-        ))
+        mutableStateOf(currentPlan?.days ?: emptySet())
     }
 
     LazyColumn(
@@ -144,28 +237,21 @@ fun StudyPlanScreen(
                             modifier = Modifier.weight(1f),
                             value = startText,
                             onValueChange = { startText = it },
-                            label = { Text("시작 시간") },
+                            label = { Text("학습 가능 시작") },
+                            placeholder = { Text("08:00") },
                         )
                         OutlinedTextField(
                             modifier = Modifier.weight(1f),
                             value = endText,
                             onValueChange = { endText = it },
-                            label = { Text("종료 시간") },
+                            label = { Text("학습 가능 종료") },
+                            placeholder = { Text("22:30") },
                         )
                     }
-                    OutlinedTextField(
-                        value = focusHours,
-                        onValueChange = { focusHours = it },
-                        label = { Text("하루 목표 공부 시간") },
-                        suffix = { Text("시간") },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    OutlinedTextField(
-                        value = breakMinutes,
-                        onValueChange = { breakMinutes = it },
-                        label = { Text("권장 휴식 길이") },
-                        suffix = { Text("분") },
-                        modifier = Modifier.fillMaxWidth(),
+                    Text(
+                        "이 시간대는 기상 시간을 강제하지 않고 첫 집중 블록과 저녁 학습 마감 판단에만 사용합니다.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text("공부 요일", style = MaterialTheme.typography.titleMedium)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -194,21 +280,23 @@ fun StudyPlanScreen(
                         }
                         Switch(checked = autoBreak, onCheckedChange = { autoBreak = it })
                     }
+                    error?.let {
+                        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                    }
                     Button(
                         modifier = Modifier.fillMaxWidth(),
                         onClick = {
-                            viewModel.saveStudyPlan(
-                                startText = startText,
-                                endText = endText,
-                                focusHours = focusHours,
-                                breakMinutes = breakMinutes,
-                                autoBreakEnabled = autoBreak,
-                                selectedDays = selectedDays,
-                            )
-                            onSaved()
+                            val result = parseStudyPlanForm(startText, endText, autoBreak, selectedDays)
+                            if (result.error != null) {
+                                error = result.error
+                            } else {
+                                error = null
+                                viewModel.saveStudyPlan(result.value ?: return@Button)
+                                onSaved()
+                            }
                         },
                     ) {
-                        Text("학습 플랜 저장")
+                        Text("학습 가능 시간 저장")
                     }
                 }
             }
@@ -226,6 +314,7 @@ fun ExamScheduleScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var showDialog by remember { mutableStateOf(false) }
+    var editingExam by remember { mutableStateOf<ExamSchedule?>(null) }
 
     LazyColumn(
         modifier = Modifier.padding(paddingValues),
@@ -234,7 +323,10 @@ fun ExamScheduleScreen(
     ) {
         item { ScreenHeader("시험 일정 관리", onBack) }
         item {
-            Button(onClick = { showDialog = true }, modifier = Modifier.fillMaxWidth()) {
+            Button(onClick = {
+                editingExam = null
+                showDialog = true
+            }, modifier = Modifier.fillMaxWidth()) {
                 Icon(Icons.Default.Add, contentDescription = null)
                 Text("  시험 추가")
             }
@@ -255,11 +347,19 @@ fun ExamScheduleScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
-                        IconButton(onClick = {
-                            viewModel.deleteExam(exam.id)
-                            onChanged()
-                        }) {
-                            Icon(Icons.Default.Delete, contentDescription = "삭제")
+                        Row {
+                            IconButton(onClick = {
+                                editingExam = exam
+                                showDialog = true
+                            }) {
+                                Icon(Icons.Default.Edit, contentDescription = "수정")
+                            }
+                            IconButton(onClick = {
+                                viewModel.deleteExam(exam.id)
+                                onChanged()
+                            }) {
+                                Icon(Icons.Default.Delete, contentDescription = "삭제")
+                            }
                         }
                     }
                     Text("장소: ${exam.location}", style = MaterialTheme.typography.bodyMedium)
@@ -275,39 +375,46 @@ fun ExamScheduleScreen(
 
     if (showDialog) {
         ExamEditorDialog(
-            onDismiss = { showDialog = false },
+            initialExam = editingExam,
+            onDismiss = {
+                showDialog = false
+                editingExam = null
+            },
             onConfirm = { exam ->
                 viewModel.upsertExam(exam)
                 showDialog = false
+                editingExam = null
                 onChanged()
             },
         )
     }
 }
 
-// 간단한 시험 일정 입력 다이얼로그입니다. 잘못된 날짜/시간은 안전한 기본값으로 대체합니다.
+// 간단한 시험 일정 입력 다이얼로그입니다. 추천 기준을 왜곡하지 않도록 잘못된 날짜/시간은 저장 전에 막습니다.
 @Composable
 private fun ExamEditorDialog(
+    initialExam: ExamSchedule?,
     onDismiss: () -> Unit,
     onConfirm: (ExamSchedule) -> Unit,
 ) {
-    var name by rememberSaveable { mutableStateOf("") }
-    var date by rememberSaveable { mutableStateOf(LocalDate.now().plusDays(7).toString()) }
-    var startTime by rememberSaveable { mutableStateOf("07:00") }
-    var endTime by rememberSaveable { mutableStateOf("10:00") }
-    var location by rememberSaveable { mutableStateOf("시험장") }
-    var priority by rememberSaveable { mutableStateOf("1") }
-    var syncEnabled by rememberSaveable { mutableStateOf(true) }
+    var name by rememberSaveable(initialExam?.id) { mutableStateOf(initialExam?.name ?: "") }
+    var date by rememberSaveable(initialExam?.id) { mutableStateOf(initialExam?.date?.toString() ?: "") }
+    var startTime by rememberSaveable(initialExam?.id) { mutableStateOf(initialExam?.startTime?.toDisplayTime() ?: "") }
+    var endTime by rememberSaveable(initialExam?.id) { mutableStateOf(initialExam?.endTime?.toDisplayTime() ?: "") }
+    var location by rememberSaveable(initialExam?.id) { mutableStateOf(initialExam?.location ?: "") }
+    var priority by rememberSaveable(initialExam?.id) { mutableStateOf(initialExam?.priority?.toString() ?: "1") }
+    var syncEnabled by rememberSaveable(initialExam?.id) { mutableStateOf(initialExam?.syncEnabled ?: true) }
+    var error by rememberSaveable(initialExam?.id) { mutableStateOf<String?>(null) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("시험 일정 추가") },
+        title = { Text(if (initialExam == null) "시험 일정 추가" else "시험 일정 수정") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("이름") })
-                OutlinedTextField(value = date, onValueChange = { date = it }, label = { Text("날짜 (YYYY-MM-DD)") })
-                OutlinedTextField(value = startTime, onValueChange = { startTime = it }, label = { Text("시작 시간") })
-                OutlinedTextField(value = endTime, onValueChange = { endTime = it }, label = { Text("종료 시간") })
+                OutlinedTextField(value = date, onValueChange = { date = it }, label = { Text("날짜 (YYYY-MM-DD)") }, placeholder = { Text(LocalDate.now().plusDays(7).toString()) })
+                OutlinedTextField(value = startTime, onValueChange = { startTime = it }, label = { Text("시작 시간") }, placeholder = { Text("09:00") })
+                OutlinedTextField(value = endTime, onValueChange = { endTime = it }, label = { Text("종료 시간") }, placeholder = { Text("11:00") })
                 OutlinedTextField(value = location, onValueChange = { location = it }, label = { Text("장소") })
                 OutlinedTextField(value = priority, onValueChange = { priority = it }, label = { Text("우선순위") })
                 Row(
@@ -318,21 +425,29 @@ private fun ExamEditorDialog(
                     Text("기기 동기화")
                     Switch(checked = syncEnabled, onCheckedChange = { syncEnabled = it })
                 }
+                error?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                }
             }
         },
         confirmButton = {
             TextButton(onClick = {
-                onConfirm(
-                    ExamSchedule(
-                        name = name.ifBlank { "새 시험" },
-                        date = runCatching { LocalDate.parse(date) }.getOrDefault(LocalDate.now().plusDays(7)),
-                        startTime = runCatching { LocalTime.parse(startTime) }.getOrDefault(LocalTime.of(7, 0)),
-                        endTime = runCatching { LocalTime.parse(endTime) }.getOrDefault(LocalTime.of(10, 0)),
-                        location = location,
-                        priority = priority.toIntOrNull() ?: 1,
-                        syncEnabled = syncEnabled,
-                    ),
+                val result = parseExamForm(
+                    id = initialExam?.id ?: 0L,
+                    name = name,
+                    date = date,
+                    startTime = startTime,
+                    endTime = endTime,
+                    location = location,
+                    priority = priority,
+                    syncEnabled = syncEnabled,
                 )
+                if (result.error != null) {
+                    error = result.error
+                } else {
+                    error = null
+                    onConfirm(result.value ?: return@TextButton)
+                }
             }) {
                 Text("저장")
             }
@@ -352,6 +467,83 @@ private fun ScreenHeader(title: String, onBack: () -> Unit) {
         Text(title, style = MaterialTheme.typography.headlineMedium)
     }
 }
+
+internal data class FormResult<T>(
+    val value: T?,
+    val error: String?,
+)
+
+internal fun parseUserGoalsForm(wakeText: String, bedtimeText: String): FormResult<UserGoals> {
+    val wake = if (wakeText.isBlank()) {
+        null
+    } else {
+        parseRequiredTime(wakeText) ?: return FormResult(null, "목표 기상 시각은 HH:mm 형식으로 입력해 주세요.")
+    }
+    val bedtime = if (bedtimeText.isBlank()) {
+        null
+    } else {
+        parseRequiredTime(bedtimeText) ?: return FormResult(null, "선호 취침 시각은 HH:mm 형식으로 입력해 주세요.")
+    }
+    return FormResult(UserGoals(targetWakeTime = wake, preferredBedtime = bedtime), null)
+}
+
+internal fun parseStudyPlanForm(
+    startText: String,
+    endText: String,
+    autoBreakEnabled: Boolean,
+    selectedDays: Set<DayOfWeek>,
+): FormResult<StudyPlan> {
+    val start = parseRequiredTime(startText) ?: return FormResult(null, "학습 가능 시작 시간을 HH:mm 형식으로 입력해 주세요.")
+    val end = parseRequiredTime(endText) ?: return FormResult(null, "학습 가능 종료 시간을 HH:mm 형식으로 입력해 주세요.")
+    if (!end.isAfter(start)) return FormResult(null, "학습 가능 종료 시간은 시작 시간보다 늦어야 합니다.")
+    if (selectedDays.isEmpty()) return FormResult(null, "공부 요일을 하나 이상 선택해 주세요.")
+    return FormResult(
+        StudyPlan(
+            startTime = start,
+            endTime = end,
+            focusHours = 0,
+            days = selectedDays,
+            breakPreferenceMinutes = 0,
+            autoBreakEnabled = autoBreakEnabled,
+        ),
+        null,
+    )
+}
+
+internal fun parseExamForm(
+    id: Long,
+    name: String,
+    date: String,
+    startTime: String,
+    endTime: String,
+    location: String,
+    priority: String,
+    syncEnabled: Boolean,
+): FormResult<ExamSchedule> {
+    val parsedDate = runCatching { LocalDate.parse(date) }.getOrNull()
+        ?: return FormResult(null, "시험 날짜는 YYYY-MM-DD 형식으로 입력해 주세요.")
+    val start = parseRequiredTime(startTime) ?: return FormResult(null, "시험 시작 시간은 HH:mm 형식으로 입력해 주세요.")
+    val end = parseRequiredTime(endTime) ?: return FormResult(null, "시험 종료 시간은 HH:mm 형식으로 입력해 주세요.")
+    if (!end.isAfter(start)) return FormResult(null, "시험 종료 시간은 시작 시간보다 늦어야 합니다.")
+    val parsedPriority = priority.toIntOrNull()?.takeIf { it >= 1 }
+        ?: return FormResult(null, "우선순위는 1 이상의 숫자로 입력해 주세요.")
+    return FormResult(
+        ExamSchedule(
+            id = id,
+            name = name.ifBlank { "새 시험" },
+            date = parsedDate,
+            startTime = start,
+            endTime = end,
+            location = location.ifBlank { "미정" },
+            priority = parsedPriority,
+            syncEnabled = syncEnabled,
+        ),
+        null,
+    )
+}
+
+private fun parseRequiredTime(raw: String): LocalTime? =
+    runCatching { LocalTime.parse(raw) }.getOrNull()
 
 @HiltViewModel
 // 스케줄 관련 저장소를 합치고, 변경이 생길 때마다 추천을 다시 계산합니다.
@@ -376,27 +568,17 @@ class ScheduleViewModel @Inject constructor(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ScheduleUiState())
 
     fun saveStudyPlan(
-        startText: String,
-        endText: String,
-        focusHours: String,
-        breakMinutes: String,
-        autoBreakEnabled: Boolean,
-        selectedDays: Set<DayOfWeek>,
+        plan: StudyPlan,
     ) {
         viewModelScope.launch {
-            // 입력 문자열 파싱에 실패해도 앱이 멈추지 않도록 기본 시간/숫자로 보정합니다.
-            val plan = StudyPlan(
-                startTime = runCatching { LocalTime.parse(startText) }.getOrDefault(LocalTime.of(8, 0)),
-                endTime = runCatching { LocalTime.parse(endText) }.getOrDefault(LocalTime.of(22, 30)),
-                focusHours = focusHours.toIntOrNull() ?: 8,
-                days = selectedDays.ifEmpty {
-                    setOf(DayOfWeek.MONDAY, DayOfWeek.TUESDAY, DayOfWeek.WEDNESDAY, DayOfWeek.THURSDAY, DayOfWeek.FRIDAY)
-                },
-                breakPreferenceMinutes = breakMinutes.toIntOrNull() ?: 15,
-                autoBreakEnabled = autoBreakEnabled,
-            )
             studyPlanRepository.upsert(plan)
-            settingsRepository.updateUserGoals(UserGoals(targetWakeTime = plan.startTime.minusMinutes(90)))
+            recommendationRepository.refreshRecommendations()
+        }
+    }
+
+    fun saveUserGoals(goals: UserGoals) {
+        viewModelScope.launch {
+            settingsRepository.updateUserGoals(goals)
             recommendationRepository.refreshRecommendations()
         }
     }

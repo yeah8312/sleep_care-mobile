@@ -18,13 +18,21 @@ import androidx.room.Query
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverter
 import androidx.room.TypeConverters
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.sleepcare.mobile.domain.DrowsinessEvent
 import com.sleepcare.mobile.domain.ExamSchedule
 import com.sleepcare.mobile.domain.LastSyncState
 import com.sleepcare.mobile.domain.NotificationPreferences
 import com.sleepcare.mobile.domain.OnboardingState
 import com.sleepcare.mobile.domain.PiSessionSummary
+import com.sleepcare.mobile.domain.RecommendationActionBlock
+import com.sleepcare.mobile.domain.RecommendationActionBlockType
+import com.sleepcare.mobile.domain.RecommendationFactor
+import com.sleepcare.mobile.domain.RecommendationFactorSeverity
+import com.sleepcare.mobile.domain.RecommendationFactorType
 import com.sleepcare.mobile.domain.RecommendationSnapshot
+import com.sleepcare.mobile.domain.RecommendationStatus
 import com.sleepcare.mobile.domain.RecommendationTip
 import com.sleepcare.mobile.domain.SleepSession
 import com.sleepcare.mobile.domain.StudySessionState
@@ -42,6 +50,8 @@ import java.time.LocalTime
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
+import org.json.JSONArray
+import org.json.JSONObject
 
 // Room DB와 DataStore를 함께 정의하는 로컬 저장소 파일입니다.
 // 구조화된 기록은 Room에, 작은 설정값은 DataStore Preferences에 저장합니다.
@@ -150,6 +160,9 @@ data class RecommendationSnapshotEntity(
     val reason: String,
     val routineShiftMinutes: Int,
     val tipsSerialized: String,
+    val status: String = RecommendationStatus.Ready.name,
+    val factorsJson: String = "[]",
+    val actionBlocksJson: String = "[]",
     val generatedAt: LocalDateTime,
 )
 
@@ -307,7 +320,7 @@ interface RecommendationSnapshotDao {
         ExamScheduleEntity::class,
         RecommendationSnapshotEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = false,
 )
 @TypeConverters(RoomConverters::class)
@@ -320,6 +333,16 @@ abstract class SleepCareDatabase : RoomDatabase() {
     abstract fun studyPlanDao(): StudyPlanDao
     abstract fun examScheduleDao(): ExamScheduleDao
     abstract fun recommendationSnapshotDao(): RecommendationSnapshotDao
+}
+
+// 추천 스냅샷이 단순 문구 저장에서 근거/행동 블록 저장으로 확장됐습니다.
+// 기존 사용자는 최신 추천이 다시 계산되기 전에도 앱이 열릴 수 있도록 빈 JSON 기본값을 붙입니다.
+val MIGRATION_3_4 = object : Migration(3, 4) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE recommendation_snapshot ADD COLUMN status TEXT NOT NULL DEFAULT 'Ready'")
+        db.execSQL("ALTER TABLE recommendation_snapshot ADD COLUMN factorsJson TEXT NOT NULL DEFAULT '[]'")
+        db.execSQL("ALTER TABLE recommendation_snapshot ADD COLUMN actionBlocksJson TEXT NOT NULL DEFAULT '[]'")
+    }
 }
 
 // DataStore Preferences로 온보딩, 알림 설정, 사용자 목표, 마지막 동기화 시간을 관리합니다.
@@ -604,14 +627,10 @@ fun RecommendationSnapshotEntity.toDomain(): RecommendationSnapshot = Recommenda
     targetSleepMinutes = targetSleepMinutes,
     reason = reason,
     routineShiftMinutes = routineShiftMinutes,
-    tips = tipsSerialized.split("||").filter { it.isNotBlank() }.map { encoded ->
-        val parts = encoded.split("::")
-        RecommendationTip(
-            title = parts.getOrElse(0) { "" },
-            body = parts.getOrElse(1) { "" },
-            iconKey = parts.getOrElse(2) { "insights" },
-        )
-    },
+    status = parseEnum(status, RecommendationStatus.Ready),
+    factors = decodeRecommendationFactors(factorsJson),
+    actionBlocks = decodeRecommendationActionBlocks(actionBlocksJson),
+    tips = decodeRecommendationTips(tipsSerialized),
     generatedAt = generatedAt,
 )
 
@@ -622,6 +641,102 @@ fun RecommendationSnapshot.toEntity(): RecommendationSnapshotEntity = Recommenda
     targetSleepMinutes = targetSleepMinutes,
     reason = reason,
     routineShiftMinutes = routineShiftMinutes,
-    tipsSerialized = tips.joinToString("||") { "${it.title}::${it.body}::${it.iconKey}" },
+    tipsSerialized = encodeRecommendationTips(tips),
+    status = status.name,
+    factorsJson = encodeRecommendationFactors(factors),
+    actionBlocksJson = encodeRecommendationActionBlocks(actionBlocks),
     generatedAt = generatedAt,
 )
+
+private fun encodeRecommendationTips(tips: List<RecommendationTip>): String = JSONArray().apply {
+    tips.forEach { tip ->
+        put(
+            JSONObject()
+                .put("title", tip.title)
+                .put("body", tip.body)
+                .put("iconKey", tip.iconKey)
+        )
+    }
+}.toString()
+
+private fun decodeRecommendationTips(raw: String): List<RecommendationTip> {
+    if (raw.isBlank()) return emptyList()
+    return if (raw.trim().startsWith("[")) {
+        runCatching {
+            val array = JSONArray(raw)
+            List(array.length()) { index ->
+                val item = array.getJSONObject(index)
+                RecommendationTip(
+                    title = item.optString("title"),
+                    body = item.optString("body"),
+                    iconKey = item.optString("iconKey", "insights"),
+                )
+            }
+        }.getOrDefault(emptyList())
+    } else {
+        // 3버전까지는 구분자 문자열로 저장했습니다. 재계산 전 화면이 깨지지 않게 읽기만 호환합니다.
+        raw.split("||").filter { it.isNotBlank() }.map { encoded ->
+            val parts = encoded.split("::")
+            RecommendationTip(
+                title = parts.getOrElse(0) { "" },
+                body = parts.getOrElse(1) { "" },
+                iconKey = parts.getOrElse(2) { "insights" },
+            )
+        }
+    }
+}
+
+private fun encodeRecommendationFactors(factors: List<RecommendationFactor>): String = JSONArray().apply {
+    factors.forEach { factor ->
+        put(
+            JSONObject()
+                .put("type", factor.type.name)
+                .put("title", factor.title)
+                .put("value", factor.value)
+                .put("description", factor.description)
+                .put("severity", factor.severity.name)
+        )
+    }
+}.toString()
+
+private fun decodeRecommendationFactors(raw: String): List<RecommendationFactor> = runCatching {
+    val array = JSONArray(raw.ifBlank { "[]" })
+    List(array.length()) { index ->
+        val item = array.getJSONObject(index)
+        RecommendationFactor(
+            type = parseEnum(item.optString("type"), RecommendationFactorType.UserGoal),
+            title = item.optString("title"),
+            value = item.optString("value"),
+            description = item.optString("description"),
+            severity = parseEnum(item.optString("severity"), RecommendationFactorSeverity.Unknown),
+        )
+    }
+}.getOrDefault(emptyList())
+
+private fun encodeRecommendationActionBlocks(blocks: List<RecommendationActionBlock>): String = JSONArray().apply {
+    blocks.forEach { block ->
+        put(
+            JSONObject()
+                .put("type", block.type.name)
+                .put("title", block.title)
+                .put("timeLabel", block.timeLabel)
+                .put("description", block.description)
+        )
+    }
+}.toString()
+
+private fun decodeRecommendationActionBlocks(raw: String): List<RecommendationActionBlock> = runCatching {
+    val array = JSONArray(raw.ifBlank { "[]" })
+    List(array.length()) { index ->
+        val item = array.getJSONObject(index)
+        RecommendationActionBlock(
+            type = parseEnum(item.optString("type"), RecommendationActionBlockType.FocusStudy),
+            title = item.optString("title"),
+            timeLabel = item.optString("timeLabel"),
+            description = item.optString("description"),
+        )
+    }
+}.getOrDefault(emptyList())
+
+private inline fun <reified T : Enum<T>> parseEnum(raw: String?, fallback: T): T =
+    runCatching { enumValueOf<T>(raw.orEmpty()) }.getOrDefault(fallback)
