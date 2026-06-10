@@ -1,6 +1,7 @@
 package com.sleepcare.mobile.domain
 
 import com.sleepcare.mobile.data.repository.SleepCareRecommendationEngine
+import com.sleepcare.mobile.data.repository.buildSleepAnalysisSnapshot
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -20,6 +21,27 @@ class RecommendationEngineTest {
 
         assertEquals(RecommendationStatus.NeedsSetup, recommendation.status)
         assertTrue(recommendation.reason.contains("설정"))
+    }
+
+    @Test
+    fun `sleep duration factor uses the same weekly average as sleep analysis`() {
+        val sleepSessions = listOf(
+            sleep("a", "2026-04-05T01:30:00", "2026-04-05T05:00:00", 210),
+            sleep("b", "2026-04-05T06:30:00", "2026-04-05T08:00:00", 90),
+            sleep("c", "2026-04-06T02:00:00", "2026-04-06T09:00:00", 420),
+        )
+        val analysis = buildSleepAnalysisSnapshot(sleepSessions)
+
+        val recommendation = engine.generate(
+            baseInput(
+                sleepSessions = sleepSessions,
+                userGoals = UserGoals(targetWakeTime = LocalTime.of(7, 0)),
+            )
+        )
+
+        val sleepDurationFactor = recommendation.factors.first { it.type == RecommendationFactorType.SleepDuration }
+        assertTrue(sleepDurationFactor.value.contains(analysis.averageMinutes.toDurationTextForTest()))
+        assertTrue(sleepDurationFactor.description.contains("수면 요약"))
     }
 
     @Test
@@ -55,7 +77,7 @@ class RecommendationEngineTest {
         val recommendation = engine.generate(
             baseInput(
                 sleepSessions = listOf(
-                    sleep("a", "2026-04-05T23:00:00", "2026-04-06T06:00:00", 420),
+                    sleep("a", "2026-04-04T23:00:00", "2026-04-05T06:00:00", 420),
                     sleep("b", "2026-04-06T02:00:00", "2026-04-06T08:00:00", 360),
                     sleep("c", "2026-04-07T04:00:00", "2026-04-07T09:00:00", 300),
                 ),
@@ -158,4 +180,6 @@ class RecommendationEngineTest {
         breakPreferenceMinutes = 0,
         autoBreakEnabled = autoBreakEnabled,
     )
+
+    private fun Int.toDurationTextForTest(): String = "${this / 60}시간 ${this % 60}분"
 }

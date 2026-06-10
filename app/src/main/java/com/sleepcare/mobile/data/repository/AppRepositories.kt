@@ -999,7 +999,7 @@ private enum class ExamTimeBand(val label: String) {
 }
 
 private data class SleepRhythmProfile(
-    val sessionCount: Int,
+    val dayCount: Int,
     val averageMinutes: Int?,
     val medianBedtime: LocalTime?,
     val medianWakeTime: LocalTime?,
@@ -1028,31 +1028,33 @@ private fun analyzeSleepRhythm(
     sessions: List<com.sleepcare.mobile.domain.SleepSession>,
     generatedAt: LocalDateTime,
 ): SleepRhythmProfile {
-    val recent = sessions
+    val recentDays = sessions
         .filter { !it.endTime.isAfter(generatedAt) }
-        .sortedByDescending { it.endTime }
+        .let(::buildWeeklySleepDaySummaries)
         .take(7)
-    if (recent.isEmpty()) {
+    if (recentDays.isEmpty()) {
         return SleepRhythmProfile(0, null, null, null, null, null, ConsistencyMode.InsufficientData)
     }
 
-    val bedtimeMinutes = recent.map { it.startTime.toLocalTime().toBedtimeAxisMinute() }
-    val wakeMinutes = recent.map { it.endTime.toLocalTime().toMinuteOfDay() }
+    // 수면 분석 화면과 같은 "최근 일별 수면 요약"을 사용해야 평균 수면 시간이 서로 다르게 보이지 않습니다.
+    // 같은 밤에 분할 기록된 Health Connect 세션은 먼저 합쳐지고, 낮잠은 같은 날짜의 추가 수면으로만 반영됩니다.
+    val bedtimeMinutes = recentDays.map { it.primarySession.startTime.toLocalTime().toBedtimeAxisMinute() }
+    val wakeMinutes = recentDays.map { it.primarySession.endTime.toLocalTime().toMinuteOfDay() }
     val medianBedtimeMinute = bedtimeMinutes.medianInt()
     val medianWakeMinute = wakeMinutes.medianInt()
     val bedtimeDeviation = bedtimeMinutes.averageAbsoluteDeviation(medianBedtimeMinute)
     val wakeDeviation = wakeMinutes.averageAbsoluteDeviation(medianWakeMinute)
     val maxDeviation = maxOf(bedtimeDeviation, wakeDeviation)
     val mode = when {
-        recent.size < 3 -> ConsistencyMode.InsufficientData
+        recentDays.size < 3 -> ConsistencyMode.InsufficientData
         maxDeviation <= 45 -> ConsistencyMode.Stable
         maxDeviation <= 90 -> ConsistencyMode.Drifting
         else -> ConsistencyMode.Irregular
     }
 
     return SleepRhythmProfile(
-        sessionCount = recent.size,
-        averageMinutes = recent.map { it.totalMinutes }.average().toInt(),
+        dayCount = recentDays.size,
+        averageMinutes = recentDays.map { it.totalMinutes }.average().toInt(),
         medianBedtime = LocalTime.of((medianBedtimeMinute.floorModDay()) / 60, medianBedtimeMinute.floorModDay() % 60),
         medianWakeTime = LocalTime.of(medianWakeMinute / 60, medianWakeMinute % 60),
         bedtimeDeviationMinutes = bedtimeDeviation,
@@ -1155,7 +1157,7 @@ private fun buildRecommendationFactors(
             type = RecommendationFactorType.SleepDuration,
             title = "수면 시간",
             value = sleepProfile.averageMinutes?.let { "최근 평균 ${it.toDurationText()}" } ?: "수면 기록 없음",
-            description = sleepProfile.averageMinutes?.let { "최근 ${sleepProfile.sessionCount}개 수면 세션의 평균을 목표 수면량에 반영했습니다." }
+            description = sleepProfile.averageMinutes?.let { "최근 ${sleepProfile.dayCount}일 수면 요약의 평균을 목표 수면량에 반영했습니다." }
                 ?: "Health Connect 기록이 들어오기 전까지는 수면량 보정 없이 추천합니다.",
             severity = when {
                 sleepProfile.averageMinutes == null -> RecommendationFactorSeverity.Unknown
