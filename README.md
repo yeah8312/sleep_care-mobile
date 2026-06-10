@@ -4,6 +4,8 @@
 
 현재 이 저장소는 기획 문서와 Stitch 산출물을 바탕으로, `Kotlin + Jetpack Compose` 기반 Android 앱 MVP와 Pi 연동 1차 구현까지 완료된 상태입니다.
 
+최근 변경 내용은 [패치노트](./docs/patch-notes.md)에서 확인할 수 있습니다.
+
 ## 현재 상태
 
 - Android 네이티브 앱 프로젝트 생성 완료
